@@ -16,7 +16,9 @@
     },
     "assetBundlePatterns": ["**/*"],
     "ios": {
-      "supportsTablet": true,
+      "supportsTablet": true
+    },
+    "android": {
       "permissions": ["RECORD_AUDIO"]
     }
   }
