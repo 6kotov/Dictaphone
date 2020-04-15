@@ -1,28 +1,20 @@
-import React, { useState, useEffect, useContext } from "react";
-import {
-  StyleSheet,
-  Text,
-  Slider,
-  View,
-  Dimensions,
-  TouchableOpacity,
-} from "react-native";
-import { Audio } from "expo-av";
-import { Asset } from "expo-asset";
+import React, { useEffect, useState } from "react";
+import { StyleSheet, Text, View } from "react-native";
+import { Provider } from "react-redux";
+import { rootReducer } from './'
+import thunk from "redux-thunk";
+import { createStore, compose, applyMiddleware } from "redux";
 // import Slider from "@react-native-community/slider";
+import Context from "./src/Context";
 import * as Premissions from "expo-permissions";
-import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as FileSystem from "expo-file-system";
+import { Audio } from "expo-av";
+import Playlist from "./src/components/playlist";
+import Player from "./src/components/player";
+import Recorder from "./src/components/recorder";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 
-class Icon {
-  constructor(module, width, height) {
-    (this.module = module), (this.whidth = width), (this.height = height);
-    Asset.fromModule(this.module).downloadAsync();
-  }
-}
-const { width: DEVICE_WIDTH, height: DEVICE_HEIGHT } = Dimensions.get("window");
-const DISABLED_OPACITY = 0.5;
-const ICON_SIZE = 40;
+const store = createStore()
 
 export default function App() {
   const [recordPremission, setRecordPremission] = useState(false);
@@ -35,15 +27,43 @@ export default function App() {
   const [isRecording, setIsRecording] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isSeeking, setIsSeeking] = useState(false);
-  const [recorder, setRecorder] = useState(null);
-  const [soundPlayer, setSoundPlayer] = useState(null);
   const [recColor, setRecColor] = useState("black");
   const [isPlaybackAllowed, setIsPlaybackAllowed] = useState(false);
   const [shouldPlay, setShouldPlay] = useState(false);
   const [shouldPlayAtEndOfSeek, setShouldPlayAtEndOfSeek] = useState(false);
   const [isLooping, setIslooping] = useState(false);
-  const [playlist, setPlaylist] = useState([]);
-  const [playlistIndex, setPlaylistIndex] = useState(null);
+  let soundPlayer = null;
+  let playlist = [];
+  let playlistIndex = 0;
+  let recorder = null;
+
+  const contextValue = {
+    MaterialCommunityIcons,
+    loading,
+    playlist,
+    playlistIndex,
+    recColor,
+    isRecording,
+    recordingDuration,
+    isPlaybackAllowed,
+    soundDuration,
+    soundPosition,
+    isPlaying,
+    playItem,
+    deleteItem,
+    onSeekSliderSlidingComplete,
+    onSeekSliderValueChange,
+    getSeekSliderPosition,
+    getDuration,
+    OnMutePressed,
+    onVolumeChange,
+    stopPlay,
+    pausePlay,
+    startPlay,
+    onRecordPressed,
+    onBackward,
+    onForward,
+  };
 
   useEffect(() => {
     askForPremissions();
@@ -93,7 +113,7 @@ export default function App() {
       if (soundPlayer !== null) {
         await soundPlayer.unloadAsync();
         soundPlayer.setOnPlaybackStatusUpdate(null);
-        setSoundPlayer(null);
+        soundPlayer = null;
         setIsPlaying(false);
         setIsPlaybackAllowed(false);
       }
@@ -110,7 +130,7 @@ export default function App() {
 
       if (recorder !== null) {
         recorder.setOnRecordingStatusUpdate(null);
-        setRecorder(null);
+        recorder = null;
       }
 
       const recording = new Audio.Recording();
@@ -118,9 +138,8 @@ export default function App() {
         Audio.RECORDING_OPTIONS_PRESET_HIGH_QUALITY
       );
       recording.setOnRecordingStatusUpdate(updateScreenForRecordStatus);
-
-      await recording.startAsync();
-      setRecorder(recording);
+      recorder = recording;
+      await recorder.startAsync();
       setRecColor("red");
       setLoading(false);
     } catch (error) {
@@ -150,26 +169,12 @@ export default function App() {
 
       const date = new Date(),
         name = `Record_${date.toLocaleString().replace(/ |,|\.|:/gi, "_")}`;
+      playlist.concat({
+        name: name,
+        uri: info.uri,
+      });
 
-      setPlaylist([
-        ...playlist,
-        {
-          name: name,
-          uri: info.uri,
-        },
-      ]);
-
-      const { sound, status } = await Audio.Sound.createAsync(
-        { uri: info.uri },
-        {
-          isLooping,
-          isMuted: isMuted,
-          volume: volume,
-          shouldPlay: false,
-        },
-        updateScreenForSoundStatus
-      );
-      setSoundPlayer(sound);
+      playItem(playlist[playlist.length1 - 1]);
       setLoading(false);
     } catch (error) {
       console.log("Error? cant stop recording", error);
@@ -182,7 +187,7 @@ export default function App() {
       if (soundPlayer !== null) {
         await soundPlayer.unloadAsync();
         soundPlayer.setOnPlaybackStatusUpdate(null);
-        setSoundPlayer(null);
+        soundPlayer = null;
         setIsPlaying(false);
         setIsPlaybackAllowed(false);
       }
@@ -197,22 +202,22 @@ export default function App() {
         playThroughEarpieceAndroid: false,
         staysActiveInBackground: true,
       });
-      setPlaylistIndex(playbackItemIndex);
+      playlistIndex = playbackItemIndex;
       const currentItem = playlist[playbackItemIndex];
 
       const { sound, status } = await Audio.Sound.createAsync(
         { uri: currentItem.uri },
         {
           isLooping,
-          isMuted: isMuted,
-          volume: volume,
-          shouldPlay: false,
+          isMuted,
+          volume,
+          shouldPlay,
         },
         updateScreenForSoundStatus
       );
 
       await sound.playAsync();
-      setSoundPlayer(sound);
+      soundPlayer = sound;
       setLoading(false);
     } catch (error) {
       console.log("Error, cant start playback:", error);
@@ -240,6 +245,16 @@ export default function App() {
 
   async function stopPlay() {
     await soundPlayer.stopAsync();
+  }
+
+  function onForward() {
+    shouldPlay = true;
+    playItem(this.playlistIndex + 1);
+  }
+
+  function onBackward() {
+    shouldPlay = true;
+    playItem(this.playlistIndex - 1);
   }
 
   function onVolumeChange(value) {
@@ -307,124 +322,24 @@ export default function App() {
     return padWithZero(minutes) + ":" + padWithZero(seconds);
   }
 
+  function deleteItem(id) {
+    if (id === playlistIndex) {
+      soundPlayer.stopAsync();
+      setShouldPlay(false);
+      playItem(playlistIndex - 1);
+    }
+    playlist.filter((item, index) => index !== id);
+  }
+
   return (
-    <>
+    <Context.Provider value={contextValue}>
       <Text style={styles.title}> -Dictaphone- </Text>
       <View style={styles.container}>
-        <View style={styles.playlist}>
-          <Text style={styles.playlisttitle}>Record list</Text>
-          {playlist.map((item, index) => {
-            return (
-              <TouchableOpacity
-                key={index}
-                style={[
-                  styles.playlistItem,
-                  {
-                    borderColor: index === playlistIndex ? "gray" : "black",
-                    backgroundColor:
-                      index === playlistIndex ? "lightgray" : "white",
-                  },
-                ]}
-                onPress={() => playItem(index)}
-              >
-                <Text>{item.name}</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-        <View style={styles.recordContainer}>
-          <TouchableOpacity
-            onPress={onRecordPressed}
-            activeOpacity={DISABLED_OPACITY}
-          >
-            <MaterialCommunityIcons
-              name="record-rec"
-              size={ICON_SIZE + 10}
-              color={recColor}
-            />
-          </TouchableOpacity>
-          <View style={styles.RecordTimeStamp}>
-            <Text style={styles.liveRecord}>{isRecording ? "LIVE " : " "}</Text>
-            <Text style={styles.recordTime}>
-              {getDuration(recordingDuration)}
-            </Text>
-          </View>
-        </View>
-        <View
-          style={[
-            styles.playBackContainer,
-            { opacity: !isPlaybackAllowed ? DISABLED_OPACITY : 1.0 },
-          ]}
-        >
-          <Slider
-            style={styles.playbackSlider}
-            value={getSeekSliderPosition()}
-            onValueChange={onSeekSliderValueChange}
-            onSlidingComplete={onSeekSliderSlidingComplete}
-            disabled={!isPlaybackAllowed || loading}
-          />
-          <View style={styles.player}>
-            <TouchableOpacity
-              activeOpacity={DISABLED_OPACITY}
-              style={styles.PlayStopPause}
-            >
-              {!isPlaying ? (
-                <MaterialCommunityIcons
-                  name="play"
-                  onPress={startPlay}
-                  size={ICON_SIZE}
-                  color="black"
-                  disabled={!isPlaybackAllowed || loading}
-                />
-              ) : (
-                <MaterialCommunityIcons
-                  name="pause"
-                  onPress={pausePlay}
-                  size={ICON_SIZE}
-                  color="black"
-                  disabled={!isPlaybackAllowed || loading}
-                />
-              )}
-              <MaterialCommunityIcons
-                name="stop"
-                onPress={stopPlay}
-                size={ICON_SIZE}
-                color="black"
-                disabled={!isPlaybackAllowed || loading}
-              />
-            </TouchableOpacity>
-            <Text style={styles.playTime}>
-              {getDuration(soundPosition)}/{getDuration(soundDuration)}
-            </Text>
-          </View>
-          <View style={styles.volumeContainer}>
-            <TouchableOpacity onPress={OnMutePressed}>
-              {isMuted ? (
-                <MaterialCommunityIcons
-                  name="volume-off"
-                  size={ICON_SIZE}
-                  color="black"
-                  disabled={!isPlaybackAllowed || loading}
-                />
-              ) : (
-                <MaterialCommunityIcons
-                  name="volume-high"
-                  size={ICON_SIZE}
-                  color="black"
-                  disabled={!isPlaybackAllowed || loading}
-                />
-              )}
-            </TouchableOpacity>
-            <Slider
-              style={styles.volumeSlider}
-              value={1}
-              onValueChange={onVolumeChange}
-              disabled={!isPlaybackAllowed || loading}
-            />
-          </View>
-        </View>
+        <Playlist />
+        <Recorder />
+        <Player />
       </View>
-    </>
+    </Context.Provider>
   );
 }
 
@@ -435,84 +350,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-around",
   },
-  playbackSlider: {
-    marginBottom: 20,
-  },
-  recordContainer: {
-    width: DEVICE_WIDTH / 1.3,
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  PlayStopPause: {
-    flexDirection: "row",
-  },
-  player: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  playBackContainer: {
-    width: DEVICE_WIDTH / 1.2,
-  },
   title: {
     alignSelf: "center",
     paddingHorizontal: 5,
     marginTop: 30,
     fontSize: 25,
     fontWeight: "bold",
-    borderColor: "black",
-    borderStyle: "solid",
-    borderWidth: 2,
-    borderRadius: 7,
-  },
-  liveRecord: {
-    color: "red",
-    fontSize: 15,
-  },
-  recordTime: {
-    fontSize: 15,
-  },
-  playTime: {
-    fontSize: 15,
-    alignSelf: "flex-start",
-  },
-  RecordTimeStamp: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  volumeContainer: {
-    flexDirection: "row",
-  },
-  volumeSlider: {
-    width: DEVICE_WIDTH / 2.2,
-  },
-  playlist: {
-    height: DEVICE_HEIGHT / 2,
-    width: DEVICE_WIDTH - 20,
-    borderColor: "gray",
-    borderStyle: "solid",
-    borderWidth: 2,
-    borderRadius: 3,
-  },
-  playlistItem: {
-    padding: 5,
-    marginVertical: 3,
-    marginHorizontal: 5,
-    borderColor: "gray",
-    borderStyle: "solid",
-    borderWidth: 1,
-    borderRadius: 3,
-  },
-  playlisttitle: {
-    marginVertical: 3,
-    marginHorizontal: 5,
-    borderStyle: "solid",
-    borderWidth: 2,
-    borderRadius: 3,
-    borderColor: "black",
-    backgroundColor: "darkgray",
-    textAlign: "center",
-    fontSize: 20,
-    fontWeight: "300",
   },
 });
