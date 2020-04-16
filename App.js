@@ -1,23 +1,26 @@
 import React, { useEffect, useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
-import { Provider } from "react-redux";
-import { rootReducer } from './'
-import thunk from "redux-thunk";
-import { createStore, compose, applyMiddleware } from "redux";
-// import Slider from "@react-native-community/slider";
-import Context from "./src/Context";
-import * as Premissions from "expo-permissions";
+import * as Permissions from "expo-permissions";
 import * as FileSystem from "expo-file-system";
+import * as MediaLibrary from "expo-media-library";
 import { Audio } from "expo-av";
-import Playlist from "./src/components/playlist";
-import Player from "./src/components/player";
-import Recorder from "./src/components/recorder";
+import { Camera } from "expo-camera";
+import {
+  StyleSheet,
+  Text,
+  View,
+  Dimensions,
+  TouchableOpacity,
+  Slider,
+  ScrollView,
+} from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-
-const store = createStore()
+const { width: DEVICE_WIDTH, height: DEVICE_HEIGHT } = Dimensions.get("window");
+const DISABLED_OPACITY = 0.5;
+const ICON_SIZE = 40;
 
 export default function App() {
   const [recordPremission, setRecordPremission] = useState(false);
+  const [mediaLibPremission, setMediaLibPremission] = useState(false);
   const [loading, setLoading] = useState(false);
   const [volume, setVolume] = useState(1.0);
   const [isMuted, setIsMuted] = useState(false);
@@ -32,46 +35,56 @@ export default function App() {
   const [shouldPlay, setShouldPlay] = useState(false);
   const [shouldPlayAtEndOfSeek, setShouldPlayAtEndOfSeek] = useState(false);
   const [isLooping, setIslooping] = useState(false);
-  let soundPlayer = null;
-  let playlist = [];
-  let playlistIndex = 0;
-  let recorder = null;
-
-  const contextValue = {
-    MaterialCommunityIcons,
-    loading,
-    playlist,
-    playlistIndex,
-    recColor,
-    isRecording,
-    recordingDuration,
-    isPlaybackAllowed,
-    soundDuration,
-    soundPosition,
-    isPlaying,
-    playItem,
-    deleteItem,
-    onSeekSliderSlidingComplete,
-    onSeekSliderValueChange,
-    getSeekSliderPosition,
-    getDuration,
-    OnMutePressed,
-    onVolumeChange,
-    stopPlay,
-    pausePlay,
-    startPlay,
-    onRecordPressed,
-    onBackward,
-    onForward,
-  };
+  const [recorder, setRecorder] = useState(null);
+  const [soundPlayer, setSoundPlayer] = useState(null);
+  const [playlist, setPlaylist] = useState([]);
+  const [playlistIndex, setPlaylistIndex] = useState(null);
 
   useEffect(() => {
-    askForPremissions();
-  }, [askForPremissions]);
+    askForAudioPremissions();
+  }, [askForAudioPremissions]);
 
-  async function askForPremissions() {
-    const { status } = await Premissions.askAsync(Premissions.AUDIO_RECORDING);
+  useEffect(() => {
+    loadPlaylist();
+  }, []);
+
+  useEffect(() => {
+    askForMeidaPremissions();
+  }, [askForMeidaPremissions]);
+
+  useEffect(() => {
+    setRecorder(recorder);
+  }, [recorder]);
+
+  useEffect(() => {
+    setSoundPlayer(soundPlayer);
+  }, [soundPlayer]);
+
+  useEffect(() => {
+    setPlaylistIndex(playlistIndex);
+  }, [playlistIndex]);
+
+  async function askForAudioPremissions() {
+    const { status } = await Permissions.askAsync(
+      Permissions.AUDIO_RECORDING,
+      Permissions.CAMERA_ROLL
+    );
     setRecordPremission(status === "granted");
+  }
+
+  async function askForMeidaPremissions() {
+    const { status } = await MediaLibrary.getPermissionsAsync();
+    setMediaLibPremission(status === "granted");
+  }
+
+  async function loadPlaylist() {
+    const assets = await MediaLibrary.getAssetsAsync({
+      album: "-2075821635",
+      first: 50,
+      mediaType: [MediaLibrary.MediaType.audio],
+    });
+
+    setPlaylist(assets.assets);
   }
 
   function updateScreenForRecordStatus(status) {
@@ -92,6 +105,7 @@ export default function App() {
       setIsPlaying(status.isPlaying);
       setIsMuted(status.isMuted);
       setVolume(status.volume);
+      setIslooping(status.isLooping);
       setIsPlaybackAllowed(true);
     } else {
       setSoundDuration(null);
@@ -107,13 +121,15 @@ export default function App() {
     setLoading(true);
     try {
       if (!recordPremission) {
-        askForPremissions();
+        askForAudioPremissions();
       }
-
+      if (!mediaLibPremission) {
+        askForMeidaPremissions;
+      }
       if (soundPlayer !== null) {
         await soundPlayer.unloadAsync();
         soundPlayer.setOnPlaybackStatusUpdate(null);
-        soundPlayer = null;
+        setSoundPlayer(null);
         setIsPlaying(false);
         setIsPlaybackAllowed(false);
       }
@@ -130,7 +146,7 @@ export default function App() {
 
       if (recorder !== null) {
         recorder.setOnRecordingStatusUpdate(null);
-        recorder = null;
+        setRecorder(null);
       }
 
       const recording = new Audio.Recording();
@@ -138,8 +154,9 @@ export default function App() {
         Audio.RECORDING_OPTIONS_PRESET_HIGH_QUALITY
       );
       recording.setOnRecordingStatusUpdate(updateScreenForRecordStatus);
-      recorder = recording;
-      await recorder.startAsync();
+
+      await recording.startAsync();
+      setRecorder(recording);
       setRecColor("red");
       setLoading(false);
     } catch (error) {
@@ -152,8 +169,11 @@ export default function App() {
     try {
       await recorder.stopAndUnloadAsync();
       setRecColor("black");
-
       const info = await FileSystem.getInfoAsync(recorder.getURI());
+      await MediaLibrary.saveToLibraryAsync(info.uri);
+      loadPlaylist();
+      setRecordingDuration(null);
+      setPlaylistIndex(playlist.length);
 
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: false,
@@ -166,15 +186,18 @@ export default function App() {
         staysActiveInBackground: true,
       });
       setIsPlaybackAllowed(true);
+      const { sound, status } = await Audio.Sound.createAsync(
+        { uri: info.uri },
+        {
+          isLooping,
+          isMuted: isMuted,
+          volume: volume,
+          shouldPlay: false,
+        },
+        updateScreenForSoundStatus
+      );
 
-      const date = new Date(),
-        name = `Record_${date.toLocaleString().replace(/ |,|\.|:/gi, "_")}`;
-      playlist.concat({
-        name: name,
-        uri: info.uri,
-      });
-
-      playItem(playlist[playlist.length1 - 1]);
+      setSoundPlayer(sound);
       setLoading(false);
     } catch (error) {
       console.log("Error? cant stop recording", error);
@@ -187,7 +210,7 @@ export default function App() {
       if (soundPlayer !== null) {
         await soundPlayer.unloadAsync();
         soundPlayer.setOnPlaybackStatusUpdate(null);
-        soundPlayer = null;
+        setSoundPlayer(null);
         setIsPlaying(false);
         setIsPlaybackAllowed(false);
       }
@@ -202,7 +225,7 @@ export default function App() {
         playThroughEarpieceAndroid: false,
         staysActiveInBackground: true,
       });
-      playlistIndex = playbackItemIndex;
+      setPlaylistIndex(playbackItemIndex);
       const currentItem = playlist[playbackItemIndex];
 
       const { sound, status } = await Audio.Sound.createAsync(
@@ -216,11 +239,26 @@ export default function App() {
         updateScreenForSoundStatus
       );
 
-      await sound.playAsync();
-      soundPlayer = sound;
+      setSoundPlayer(sound);
+      sound.playAsync();
       setLoading(false);
     } catch (error) {
       console.log("Error, cant start playback:", error);
+    }
+  }
+
+  async function deleteItem(id, item) {
+    try {
+      if (id === playlistIndex) {
+        soundPlayer.stopAsync();
+        setShouldPlay(false);
+        playItem(playlistIndex - 1);
+      }
+      await MediaLibrary.deleteAssetsAsync([item]);
+
+      loadPlaylist();
+    } catch (error) {
+      console.log("Cant remove record:" + error);
     }
   }
 
@@ -233,6 +271,9 @@ export default function App() {
   }
 
   async function startPlay() {
+    if (!soundPlayer) {
+      return;
+    }
     if (soundPosition === soundDuration) {
       soundPlayer.setPositionAsync(0);
     }
@@ -240,21 +281,27 @@ export default function App() {
   }
 
   async function pausePlay() {
+    if (!soundPlayer) {
+      return;
+    }
     await soundPlayer.pauseAsync();
   }
 
   async function stopPlay() {
+    if (!soundPlayer) {
+      return;
+    }
     await soundPlayer.stopAsync();
   }
 
   function onForward() {
-    shouldPlay = true;
-    playItem(this.playlistIndex + 1);
+    setShouldPlay(true);
+    playItem(playlistIndex + 1);
   }
 
   function onBackward() {
-    shouldPlay = true;
-    playItem(this.playlistIndex - 1);
+    setShouldPlay(true);
+    playItem(playlistIndex - 1);
   }
 
   function onVolumeChange(value) {
@@ -266,6 +313,12 @@ export default function App() {
   function OnMutePressed() {
     if (soundPlayer != null) {
       soundPlayer.setIsMutedAsync(!isMuted);
+    }
+  }
+
+  function onLoopPressed() {
+    if (soundPlayer != null) {
+      soundPlayer.setIsLoopingAsync(!isLooping);
     }
   }
 
@@ -322,24 +375,189 @@ export default function App() {
     return padWithZero(minutes) + ":" + padWithZero(seconds);
   }
 
-  function deleteItem(id) {
-    if (id === playlistIndex) {
-      soundPlayer.stopAsync();
-      setShouldPlay(false);
-      playItem(playlistIndex - 1);
-    }
-    playlist.filter((item, index) => index !== id);
+  function getRecordName(epoch) {
+    const date = new Date(epoch),
+      rowName = `Rec_${date.toLocaleDateString()}-${date.toLocaleTimeString()}`,
+      // name = rowName.replace(/ |,|\.|\/|:/gi, "_");
+      name = rowName.replace(/\//gi, ".");
+    return name;
   }
 
   return (
-    <Context.Provider value={contextValue}>
+    <>
       <Text style={styles.title}> -Dictaphone- </Text>
       <View style={styles.container}>
-        <Playlist />
-        <Recorder />
-        <Player />
+        <ScrollView style={styles.playlist}>
+          <Text style={styles.playlisttitle}>Record list</Text>
+          {playlist.map((item, index) => {
+            return (
+              <TouchableOpacity
+                key={index}
+                style={[
+                  styles.playlistItem,
+                  {
+                    borderColor: index === playlistIndex ? "gray" : "black",
+                    backgroundColor:
+                      index === playlistIndex ? "lightgray" : "white",
+                  },
+                ]}
+                onPress={() => playItem(index)}
+              >
+                <Text>{getRecordName(item.modificationTime)}</Text>
+                <View style={styles.playlistItemTimeAndDelete}>
+                  <Text>{getDuration(item.duration * 1000)}</Text>
+                  <MaterialCommunityIcons
+                    name="delete-forever"
+                    onPress={() => deleteItem(index, item)}
+                    size={ICON_SIZE - 15}
+                    color="black"
+                  />
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+        <View style={styles.recordContainer}>
+          <TouchableOpacity
+            onPress={onRecordPressed}
+            activeOpacity={DISABLED_OPACITY}
+          >
+            <MaterialCommunityIcons
+              name="record-rec"
+              size={ICON_SIZE + 10}
+              color={recColor}
+            />
+          </TouchableOpacity>
+          <View style={styles.RecordTimeStamp}>
+            <Text style={styles.liveRecord}>{isRecording ? "LIVE " : " "}</Text>
+            <Text style={styles.recordTime}>
+              {getDuration(recordingDuration)}
+            </Text>
+          </View>
+        </View>
+        <View
+          style={[
+            styles.playBackContainer,
+            { opacity: !isPlaybackAllowed ? DISABLED_OPACITY : 1.0 },
+          ]}
+        >
+          <Slider
+            style={styles.playbackSlider}
+            value={getSeekSliderPosition()}
+            onValueChange={onSeekSliderValueChange}
+            onSlidingComplete={onSeekSliderSlidingComplete}
+            disabled={!isPlaybackAllowed || loading}
+          />
+          <View style={styles.player}>
+            <TouchableOpacity
+              activeOpacity={DISABLED_OPACITY}
+              style={styles.PlayStopPause}
+            >
+              <MaterialCommunityIcons
+                name="skip-backward"
+                onPress={onBackward}
+                size={ICON_SIZE}
+                color="black"
+                style={{
+                  opacity:
+                    !isPlaybackAllowed ||
+                    loading ||
+                    !playlist[playlistIndex - 1]
+                      ? DISABLED_OPACITY
+                      : 1,
+                }}
+                disabled={
+                  !isPlaybackAllowed || loading || !playlist[playlistIndex - 1]
+                }
+              />
+
+              {!isPlaying ? (
+                <MaterialCommunityIcons
+                  name="play"
+                  onPress={startPlay}
+                  size={ICON_SIZE}
+                  color="black"
+                  disabled={!isPlaybackAllowed || loading}
+                />
+              ) : (
+                <MaterialCommunityIcons
+                  name="pause"
+                  onPress={pausePlay}
+                  size={ICON_SIZE}
+                  color="black"
+                  disabled={!isPlaybackAllowed || loading}
+                />
+              )}
+              <MaterialCommunityIcons
+                name="stop"
+                onPress={stopPlay}
+                size={ICON_SIZE}
+                color="black"
+                disabled={!isPlaybackAllowed || loading}
+              />
+
+              <MaterialCommunityIcons
+                name="skip-forward"
+                onPress={onForward}
+                size={ICON_SIZE}
+                color="black"
+                style={{
+                  opacity:
+                    !isPlaybackAllowed ||
+                    loading ||
+                    !playlist[playlistIndex + 1]
+                      ? DISABLED_OPACITY
+                      : 1,
+                }}
+                disabled={
+                  !isPlaybackAllowed || loading || !playlist[playlistIndex + 1]
+                }
+              />
+            </TouchableOpacity>
+            <Text style={styles.playTime}>
+              {getDuration(soundPosition)}/{getDuration(soundDuration)}
+            </Text>
+          </View>
+          <View style={styles.volumeContainer}>
+            {isMuted ? (
+              <MaterialCommunityIcons
+                name="volume-off"
+                size={ICON_SIZE}
+                color="black"
+                onPress={OnMutePressed}
+                disabled={!isPlaybackAllowed || loading}
+              />
+            ) : (
+              <MaterialCommunityIcons
+                name="volume-high"
+                size={ICON_SIZE}
+                color="black"
+                onPress={OnMutePressed}
+                disabled={!isPlaybackAllowed || loading}
+              />
+            )}
+
+            <Slider
+              style={styles.volumeSlider}
+              value={1.0}
+              onValueChange={onVolumeChange}
+              disabled={!isPlaybackAllowed || loading}
+            />
+
+            <MaterialCommunityIcons
+              name="loop"
+              size={ICON_SIZE}
+              color="black"
+              onPress={onLoopPressed}
+              disabled={!isPlaybackAllowed || loading}
+              style={{
+                opacity: !isLooping ? DISABLED_OPACITY : 1,
+              }}
+            />
+          </View>
+        </View>
       </View>
-    </Context.Provider>
+    </>
   );
 }
 
@@ -356,5 +574,81 @@ const styles = StyleSheet.create({
     marginTop: 30,
     fontSize: 25,
     fontWeight: "bold",
+  },
+  playlist: {
+    height: DEVICE_HEIGHT / 2,
+    width: DEVICE_WIDTH - 20,
+    borderColor: "gray",
+    borderStyle: "solid",
+    borderWidth: 2,
+    borderRadius: 3,
+  },
+  playlistItem: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    padding: 5,
+    marginVertical: 3,
+    marginHorizontal: 5,
+    borderColor: "gray",
+    borderStyle: "solid",
+    borderWidth: 1,
+    borderRadius: 3,
+  },
+  playlisttitle: {
+    marginVertical: 3,
+    marginHorizontal: 5,
+    borderStyle: "solid",
+    borderWidth: 2,
+    borderRadius: 3,
+    borderColor: "black",
+    backgroundColor: "darkgray",
+    textAlign: "center",
+    fontSize: 20,
+    fontWeight: "300",
+  },
+  RecordTimeStamp: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  liveRecord: {
+    color: "red",
+    fontSize: 15,
+  },
+  recordTime: {
+    fontSize: 15,
+  },
+  recordContainer: {
+    width: DEVICE_WIDTH / 1.3,
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  playbackSlider: {
+    marginBottom: 20,
+  },
+  PlayStopPause: {
+    flexDirection: "row",
+  },
+  player: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  playBackContainer: {
+    width: DEVICE_WIDTH / 1.2,
+  },
+  playTime: {
+    fontSize: 15,
+    alignSelf: "flex-start",
+  },
+  volumeContainer: {
+    flexDirection: "row",
+  },
+  volumeSlider: {
+    width: DEVICE_WIDTH / 2.2,
+  },
+  playlistItemTimeAndDelete: {
+    flexDirection: "row",
+    width: 70,
+    justifyContent: "space-between",
   },
 });
