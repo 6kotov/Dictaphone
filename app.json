@@ -19,7 +19,9 @@
       "supportsTablet": true
     },
     "android": {
-      "permissions": ["RECORD_AUDIO"]
+      "permissions": ["RECORD_AUDIO"],
+      "package": "net.worddict",
+      "versionCode": 1
     }
   }
 }
