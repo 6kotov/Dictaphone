@@ -21,6 +21,9 @@ const ICON_SIZE = 40;
 export default function App() {
   const [recordPremission, setRecordPremission] = useState(false);
   const [mediaLibPremission, setMediaLibPremission] = useState(false);
+  const [cameraPermission, setCameraPermission] = useState(false);
+  const [showCamera, setShowCamera] = useState(false);
+  const [cameraType, setCameraType] = useState(Camera.Constants.Type.back);
   const [loading, setLoading] = useState(false);
   const [volume, setVolume] = useState(1.0);
   const [isMuted, setIsMuted] = useState(false);
@@ -41,16 +44,28 @@ export default function App() {
   const [playlistIndex, setPlaylistIndex] = useState(null);
 
   useEffect(() => {
-    askForAudioPremissions();
-  }, [askForAudioPremissions]);
+    (async () => {
+      const { status } = await MediaLibrary.getPermissionsAsync();
+      setMediaLibPremission(status === "granted");
+    })();
+
+    (async () => {
+      const { status } = await Permissions.askAsync(
+        Permissions.AUDIO_RECORDING,
+        Permissions.CAMERA_ROLL
+      );
+      setRecordPremission(status === "granted");
+    })();
+
+    (async () => {
+      const { status } = await Camera.requestPermissionsAsync();
+      setCameraPermission(status === "granted");
+    })();
+  }, []);
 
   useEffect(() => {
     loadPlaylist();
   }, []);
-
-  useEffect(() => {
-    askForMeidaPremissions();
-  }, [askForMeidaPremissions]);
 
   useEffect(() => {
     setRecorder(recorder);
@@ -63,19 +78,6 @@ export default function App() {
   useEffect(() => {
     setPlaylistIndex(playlistIndex);
   }, [playlistIndex]);
-
-  async function askForAudioPremissions() {
-    const { status } = await Permissions.askAsync(
-      Permissions.AUDIO_RECORDING,
-      Permissions.CAMERA_ROLL
-    );
-    setRecordPremission(status === "granted");
-  }
-
-  async function askForMeidaPremissions() {
-    const { status } = await MediaLibrary.getPermissionsAsync();
-    setMediaLibPremission(status === "granted");
-  }
 
   async function loadPlaylist() {
     const assets = await MediaLibrary.getAssetsAsync({
@@ -385,184 +387,252 @@ export default function App() {
 
   return (
     <>
-      <Text style={styles.title}> -Dictaphone- </Text>
-      <View style={styles.container}>
-        <ScrollView style={styles.playlist}>
-          <Text style={styles.playlisttitle}>Record list</Text>
-          {playlist.map((item, index) => {
-            return (
-              <TouchableOpacity
-                key={index}
-                style={[
-                  styles.playlistItem,
-                  {
-                    borderColor: index === playlistIndex ? "gray" : "black",
-                    backgroundColor:
-                      index === playlistIndex ? "lightgray" : "white",
-                  },
-                ]}
-                onPress={() => playItem(index)}
-              >
-                <Text>{getRecordName(item.modificationTime)}</Text>
-                <View style={styles.playlistItemTimeAndDelete}>
-                  <Text>{getDuration(item.duration * 1000)}</Text>
-                  <MaterialCommunityIcons
-                    name="delete-forever"
-                    onPress={() => deleteItem(index, item)}
-                    size={ICON_SIZE - 15}
-                    color="black"
-                  />
-                </View>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
-        <View style={styles.recordContainer}>
-          <TouchableOpacity
-            onPress={onRecordPressed}
-            activeOpacity={DISABLED_OPACITY}
-          >
-            <MaterialCommunityIcons
-              name="record-rec"
-              size={ICON_SIZE + 10}
-              color={recColor}
-            />
-          </TouchableOpacity>
-          <View style={styles.RecordTimeStamp}>
-            <Text style={styles.liveRecord}>{isRecording ? "LIVE " : " "}</Text>
-            <Text style={styles.recordTime}>
-              {getDuration(recordingDuration)}
-            </Text>
-          </View>
-        </View>
-        <View
-          style={[
-            styles.playBackContainer,
-            { opacity: !isPlaybackAllowed ? DISABLED_OPACITY : 1.0 },
-          ]}
-        >
-          <Slider
-            style={styles.playbackSlider}
-            value={getSeekSliderPosition()}
-            onValueChange={onSeekSliderValueChange}
-            onSlidingComplete={onSeekSliderSlidingComplete}
-            disabled={!isPlaybackAllowed || loading}
-          />
-          <View style={styles.player}>
-            <TouchableOpacity
-              activeOpacity={DISABLED_OPACITY}
-              style={styles.PlayStopPause}
+      {showCamera ? (
+        <View style={{ flex: 1 }}>
+          <Camera style={{ flex: 1 }} type={cameraType}>
+            <View
+              style={{
+                flex: 1,
+                backgroundColor: "transparent",
+                flexDirection: "row",
+              }}
             >
               <MaterialCommunityIcons
-                name="skip-backward"
-                onPress={onBackward}
-                size={ICON_SIZE}
-                color="black"
+                name="camera-switch"
+                onPress={() => {
+                  setCameraType(
+                    cameraType === Camera.Constants.Type.back
+                      ? Camera.Constants.Type.front
+                      : Camera.Constants.Type.back
+                  );
+                }}
                 style={{
-                  opacity:
+                  alignSelf: "flex-end",
+                  margin: 20,
+                }}
+                size={ICON_SIZE}
+                color="white"
+                disabled={loading}
+              />
+              <MaterialCommunityIcons
+                style={{
+                  alignSelf: "flex-end",
+                  margin: 20,
+                }}
+                name="microphone"
+                onPress={() => setShowCamera(false)}
+                size={ICON_SIZE}
+                color="white"
+                disabled={loading}
+              />
+
+              <MaterialCommunityIcons
+                style={{
+                  alignSelf: "flex-end",
+                  margin: 20,
+                }}
+                name="camera-iris"
+                onPress={() => setShowCamera(false)}
+                size={ICON_SIZE + 20}
+                color="white"
+                disabled={loading}
+              />
+            </View>
+          </Camera>
+        </View>
+      ) : (
+        <View style={styles.playerContainer}>
+          <Text style={styles.title}> -Dictaphone- </Text>
+          <ScrollView style={styles.playlist}>
+            <Text style={styles.playlisttitle}>Record list</Text>
+            {playlist.map((item, index) => {
+              return (
+                <TouchableOpacity
+                  key={index}
+                  style={[
+                    styles.playlistItem,
+                    {
+                      borderColor: index === playlistIndex ? "gray" : "black",
+                      backgroundColor:
+                        index === playlistIndex ? "lightgray" : "white",
+                    },
+                  ]}
+                  onPress={() => playItem(index)}
+                >
+                  <Text>{getRecordName(item.modificationTime)}</Text>
+                  <View style={styles.playlistItemTimeAndDelete}>
+                    <Text>{getDuration(item.duration * 1000)}</Text>
+                    <MaterialCommunityIcons
+                      name="delete-forever"
+                      onPress={() => deleteItem(index, item)}
+                      size={ICON_SIZE - 15}
+                      color="black"
+                    />
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+          <View style={styles.recordContainer}>
+            <TouchableOpacity
+              onPress={onRecordPressed}
+              activeOpacity={DISABLED_OPACITY}
+            >
+              <MaterialCommunityIcons
+                name="record-rec"
+                size={ICON_SIZE + 10}
+                color={recColor}
+              />
+            </TouchableOpacity>
+            <MaterialCommunityIcons
+              name="camera"
+              onPress={() => setShowCamera(true)}
+              size={ICON_SIZE}
+              color="black"
+              disabled={loading}
+            />
+            <View style={styles.RecordTimeStamp}>
+              <Text style={styles.liveRecord}>
+                {isRecording ? "LIVE " : " "}
+              </Text>
+              <Text style={styles.recordTime}>
+                {getDuration(recordingDuration)}
+              </Text>
+            </View>
+          </View>
+          <View
+            style={[
+              styles.playBackContainer,
+              { opacity: !isPlaybackAllowed ? DISABLED_OPACITY : 1.0 },
+            ]}
+          >
+            <Slider
+              style={styles.playbackSlider}
+              value={getSeekSliderPosition()}
+              onValueChange={onSeekSliderValueChange}
+              onSlidingComplete={onSeekSliderSlidingComplete}
+              disabled={!isPlaybackAllowed || loading}
+            />
+            <View style={styles.player}>
+              <TouchableOpacity
+                activeOpacity={DISABLED_OPACITY}
+                style={styles.PlayStopPause}
+              >
+                <MaterialCommunityIcons
+                  name="skip-backward"
+                  onPress={onBackward}
+                  size={ICON_SIZE}
+                  color="black"
+                  style={{
+                    opacity:
+                      !isPlaybackAllowed ||
+                      loading ||
+                      !playlist[playlistIndex - 1]
+                        ? DISABLED_OPACITY
+                        : 1,
+                  }}
+                  disabled={
                     !isPlaybackAllowed ||
                     loading ||
                     !playlist[playlistIndex - 1]
-                      ? DISABLED_OPACITY
-                      : 1,
-                }}
-                disabled={
-                  !isPlaybackAllowed || loading || !playlist[playlistIndex - 1]
-                }
-              />
+                  }
+                />
 
-              {!isPlaying ? (
+                {!isPlaying ? (
+                  <MaterialCommunityIcons
+                    name="play"
+                    onPress={startPlay}
+                    size={ICON_SIZE}
+                    color="black"
+                    disabled={!isPlaybackAllowed || loading}
+                  />
+                ) : (
+                  <MaterialCommunityIcons
+                    name="pause"
+                    onPress={pausePlay}
+                    size={ICON_SIZE}
+                    color="black"
+                    disabled={!isPlaybackAllowed || loading}
+                  />
+                )}
                 <MaterialCommunityIcons
-                  name="play"
-                  onPress={startPlay}
+                  name="stop"
+                  onPress={stopPlay}
                   size={ICON_SIZE}
                   color="black"
+                  disabled={!isPlaybackAllowed || loading}
+                />
+
+                <MaterialCommunityIcons
+                  name="skip-forward"
+                  onPress={onForward}
+                  size={ICON_SIZE}
+                  color="black"
+                  style={{
+                    opacity:
+                      !isPlaybackAllowed ||
+                      loading ||
+                      !playlist[playlistIndex + 1]
+                        ? DISABLED_OPACITY
+                        : 1,
+                  }}
+                  disabled={
+                    !isPlaybackAllowed ||
+                    loading ||
+                    !playlist[playlistIndex + 1]
+                  }
+                />
+              </TouchableOpacity>
+              <Text style={styles.playTime}>
+                {getDuration(soundPosition)}/{getDuration(soundDuration)}
+              </Text>
+            </View>
+            <View style={styles.volumeContainer}>
+              {isMuted ? (
+                <MaterialCommunityIcons
+                  name="volume-off"
+                  size={ICON_SIZE}
+                  color="black"
+                  onPress={OnMutePressed}
                   disabled={!isPlaybackAllowed || loading}
                 />
               ) : (
                 <MaterialCommunityIcons
-                  name="pause"
-                  onPress={pausePlay}
+                  name="volume-high"
                   size={ICON_SIZE}
                   color="black"
+                  onPress={OnMutePressed}
                   disabled={!isPlaybackAllowed || loading}
                 />
               )}
-              <MaterialCommunityIcons
-                name="stop"
-                onPress={stopPlay}
-                size={ICON_SIZE}
-                color="black"
+
+              <Slider
+                style={styles.volumeSlider}
+                value={1.0}
+                onValueChange={onVolumeChange}
                 disabled={!isPlaybackAllowed || loading}
               />
 
               <MaterialCommunityIcons
-                name="skip-forward"
-                onPress={onForward}
+                name="loop"
                 size={ICON_SIZE}
                 color="black"
+                onPress={onLoopPressed}
+                disabled={!isPlaybackAllowed || loading}
                 style={{
-                  opacity:
-                    !isPlaybackAllowed ||
-                    loading ||
-                    !playlist[playlistIndex + 1]
-                      ? DISABLED_OPACITY
-                      : 1,
+                  opacity: !isLooping ? DISABLED_OPACITY : 1,
                 }}
-                disabled={
-                  !isPlaybackAllowed || loading || !playlist[playlistIndex + 1]
-                }
               />
-            </TouchableOpacity>
-            <Text style={styles.playTime}>
-              {getDuration(soundPosition)}/{getDuration(soundDuration)}
-            </Text>
-          </View>
-          <View style={styles.volumeContainer}>
-            {isMuted ? (
-              <MaterialCommunityIcons
-                name="volume-off"
-                size={ICON_SIZE}
-                color="black"
-                onPress={OnMutePressed}
-                disabled={!isPlaybackAllowed || loading}
-              />
-            ) : (
-              <MaterialCommunityIcons
-                name="volume-high"
-                size={ICON_SIZE}
-                color="black"
-                onPress={OnMutePressed}
-                disabled={!isPlaybackAllowed || loading}
-              />
-            )}
-
-            <Slider
-              style={styles.volumeSlider}
-              value={1.0}
-              onValueChange={onVolumeChange}
-              disabled={!isPlaybackAllowed || loading}
-            />
-
-            <MaterialCommunityIcons
-              name="loop"
-              size={ICON_SIZE}
-              color="black"
-              onPress={onLoopPressed}
-              disabled={!isPlaybackAllowed || loading}
-              style={{
-                opacity: !isLooping ? DISABLED_OPACITY : 1,
-              }}
-            />
+            </View>
           </View>
         </View>
-      </View>
+      )}
     </>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  playerContainer: {
     flex: 1,
     backgroundColor: "#fff",
     alignItems: "center",
