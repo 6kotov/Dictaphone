@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import * as Permissions from "expo-permissions";
 import * as FileSystem from "expo-file-system";
 import * as MediaLibrary from "expo-media-library";
@@ -12,6 +12,9 @@ import {
   TouchableOpacity,
   Slider,
   ScrollView,
+  ImageBackground,
+  Animated,
+  Easing,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 const { width: DEVICE_WIDTH, height: DEVICE_HEIGHT } = Dimensions.get("window");
@@ -22,6 +25,8 @@ export default function App() {
   const [recordPremission, setRecordPremission] = useState(false);
   const [mediaLibPremission, setMediaLibPremission] = useState(false);
   const [cameraPermission, setCameraPermission] = useState(false);
+  const [cameraAspectRatio, setCameraAspectRatio] = useState("16:9");
+  const [cameraReady, setCameraReady] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
   const [cameraType, setCameraType] = useState(Camera.Constants.Type.back);
   const [loading, setLoading] = useState(false);
@@ -42,6 +47,26 @@ export default function App() {
   const [soundPlayer, setSoundPlayer] = useState(null);
   const [playlist, setPlaylist] = useState([]);
   const [playlistIndex, setPlaylistIndex] = useState(null);
+  const [prewiewImage, setPrewiewImage] = useState(null);
+  const [fetching, setFetching] = useState(true);
+  let camera = useRef(null);
+  const opacityAnim = useRef(new Animated.Value(0)).current;
+  const opacity = opacityAnim.interpolate({
+    inputRange: [0, 0.5, 1],
+    outputRange: [0, 1, 0],
+  });
+  useEffect(() => {
+    animate();
+  }, []);
+
+  function animate() {
+    opacityAnim.setValue(0);
+    Animated.timing(opacityAnim, {
+      toValue: 1,
+      duration: 2000,
+      easing: Easing.linear,
+    }).start(() => animate());
+  }
 
   useEffect(() => {
     (async () => {
@@ -79,13 +104,23 @@ export default function App() {
     setPlaylistIndex(playlistIndex);
   }, [playlistIndex]);
 
+  // async function getRatio() {
+  //   if (!camera) {
+  //     return;
+  //   }
+  //   console.log(camera);
+  //   const ratio = await camera.current.getSupportedRatiosAsync();
+  //   console.log(ratio);
+
+  //   setCameraAspectRatio(ratio[0]);
+  // }
+
   async function loadPlaylist() {
     const assets = await MediaLibrary.getAssetsAsync({
       album: "-2075821635",
       first: 50,
       mediaType: [MediaLibrary.MediaType.audio],
     });
-
     setPlaylist(assets.assets);
   }
 
@@ -385,63 +420,163 @@ export default function App() {
     return name;
   }
 
+  async function snap() {
+    if (camera && cameraReady) {
+      let { uri } = await camera.current.takePictureAsync();
+      setPrewiewImage({ uri });
+    }
+  }
+
+  async function savePhoto(uri) {
+    console.log(uri);
+    await MediaLibrary.saveToLibraryAsync(uri);
+    setPrewiewImage(null);
+  }
+
   return (
     <>
+      {fetching && (
+        <Animated.View style={{ opacity }}>
+          <MaterialCommunityIcons
+            style={{
+              alignSelf: "flex-end",
+              margin: 20,
+            }}
+            name="cloud-upload"
+            size={ICON_SIZE - 10}
+            color={showCamera ? "white" : "black"}
+          />
+        </Animated.View>
+      )}
       {showCamera ? (
         <View style={{ flex: 1 }}>
-          <Camera style={{ flex: 1 }} type={cameraType}>
-            <View
+          {cameraPermission === null ? (
+            <Viev />
+          ) : cameraPermission ? (
+            <Camera
+              ref={camera}
               style={{
                 flex: 1,
-                backgroundColor: "transparent",
-                flexDirection: "row",
               }}
+              type={cameraType}
+              ratio={cameraAspectRatio}
+              onCameraReady={() => setCameraReady(true)}
             >
-              <MaterialCommunityIcons
-                name="camera-switch"
-                onPress={() => {
-                  setCameraType(
-                    cameraType === Camera.Constants.Type.back
-                      ? Camera.Constants.Type.front
-                      : Camera.Constants.Type.back
-                  );
-                }}
+              {fetching && (
+                <Animated.View style={{ opacity }}>
+                  <MaterialCommunityIcons
+                    style={{
+                      alignSelf: "flex-end",
+                      margin: 20,
+                    }}
+                    name="cloud-upload"
+                    size={ICON_SIZE - 10}
+                    color="white"
+                  />
+                </Animated.View>
+              )}
+              <View
                 style={{
-                  alignSelf: "flex-end",
-                  margin: 20,
+                  flex: 1,
+                  backgroundColor: "transparent",
+                  flexDirection: "row",
                 }}
-                size={ICON_SIZE}
-                color="white"
-                disabled={loading}
-              />
-              <MaterialCommunityIcons
-                style={{
-                  alignSelf: "flex-end",
-                  margin: 20,
-                }}
-                name="microphone"
-                onPress={() => setShowCamera(false)}
-                size={ICON_SIZE}
-                color="white"
-                disabled={loading}
-              />
+              >
+                <MaterialCommunityIcons
+                  name="camera-switch"
+                  onPress={() => {
+                    setCameraType(
+                      cameraType === Camera.Constants.Type.back
+                        ? Camera.Constants.Type.front
+                        : Camera.Constants.Type.back
+                    );
+                  }}
+                  style={{
+                    alignSelf: "flex-end",
+                    margin: 20,
+                  }}
+                  size={ICON_SIZE}
+                  color="white"
+                  disabled={loading}
+                />
+                <MaterialCommunityIcons
+                  style={{
+                    alignSelf: "flex-end",
+                    margin: 20,
+                  }}
+                  name="microphone"
+                  onPress={() => setShowCamera(false)}
+                  size={ICON_SIZE}
+                  color="white"
+                  disabled={loading}
+                />
 
-              <MaterialCommunityIcons
-                style={{
-                  alignSelf: "flex-end",
-                  margin: 20,
-                }}
-                name="camera-iris"
-                onPress={() => setShowCamera(false)}
-                size={ICON_SIZE + 20}
-                color="white"
-                disabled={loading}
-              />
-            </View>
-          </Camera>
+                <MaterialCommunityIcons
+                  style={{
+                    alignSelf: "flex-end",
+                    margin: 20,
+                  }}
+                  name="camera-iris"
+                  onPress={snap}
+                  size={ICON_SIZE + 20}
+                  color="white"
+                  disabled={loading}
+                />
+              </View>
+              {prewiewImage && (
+                <ImageBackground
+                  source={prewiewImage}
+                  style={{
+                    flexDirection: "row",
+                    justifyContent: "space-between",
+                    width: DEVICE_WIDTH,
+                    height: DEVICE_HEIGHT,
+                  }}
+                >
+                  <MaterialCommunityIcons
+                    name="delete-forever"
+                    onPress={() => setPrewiewImage(null)}
+                    style={{
+                      alignSelf: "flex-end",
+                      margin: 20,
+                    }}
+                    size={ICON_SIZE}
+                    color="white"
+                    disabled={loading}
+                  />
+                  <MaterialCommunityIcons
+                    name="content-save"
+                    onPress={() => savePhoto(prewiewImage.uri)}
+                    style={{
+                      alignSelf: "flex-end",
+                      margin: 20,
+                    }}
+                    size={ICON_SIZE}
+                    color="white"
+                    disabled={loading}
+                  />
+                </ImageBackground>
+              )}
+            </Camera>
+          ) : (
+            <Text>No access to camera</Text>
+          )}
         </View>
       ) : (
         <View style={styles.playerContainer}>
+          {fetching && (
+            <Animated.View style={{ opacity }}>
+              <MaterialCommunityIcons
+                style={{
+                  alignSelf: "flex-end",
+                  margin: 20,
+                }}
+                name="cloud-upload"
+                size={ICON_SIZE - 10}
+                color="black"
+              />
+            </Animated.View>
+          )}
           <Text style={styles.title}> -Dictaphone- </Text>
           <ScrollView style={styles.playlist}>
             <Text style={styles.playlisttitle}>Record list</Text>
@@ -637,6 +772,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     alignItems: "center",
     justifyContent: "space-around",
+    margin: 10,
   },
   title: {
     alignSelf: "center",
