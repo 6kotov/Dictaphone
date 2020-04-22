@@ -196,7 +196,9 @@ export default function App() {
       await recorder.stopAndUnloadAsync();
       setRecColor("black");
       const info = await FileSystem.getInfoAsync(recorder.getURI());
-      await MediaLibrary.saveToLibraryAsync(info.uri);
+      const sounforSend = await MediaLibrary.createAssetAsync(info.uri);
+      // await MediaLibrary.saveToLibraryAsync(info.uri);
+      sendFile(sounforSend, "sound");
       loadPlaylist();
       setRecordingDuration(null);
       setPlaylistIndex(playlist.length);
@@ -413,22 +415,19 @@ export default function App() {
     if (camera && cameraReady) {
       let { uri } = await camera.current.takePictureAsync();
       setPrewiewImage({ uri });
-      // camera.current.pausePreview();
     }
   }
 
   async function savePhoto(uri) {
     let photo = await MediaLibrary.createAssetAsync(uri);
     sendFile(photo, "image");
-    await MediaLibrary.saveToLibraryAsync(uri);
-    setPrewiewImage(null);
-    // camera.current.resumePreview();
+    // await MediaLibrary.saveToLibraryAsync(uri);
   }
 
-  const createFormData = (photo, body, type) => {
+  const createFormData = (photo, body, type, fieldname) => {
     const data = new FormData();
 
-    data.append("photo", {
+    data.append(fieldname, {
       name: photo.filename,
       type: type,
       uri:
@@ -444,19 +443,20 @@ export default function App() {
     return data;
   };
 
-  async function sendFile(photo, type) {
+  async function sendFile(file, type) {
     const url =
         type === "image"
           ? "http://dictaphone.worddict.net/api/upload/image/"
           : "http://dictaphone.worddict.net/api/upload/sound/",
-      fileType = type === "image" ? "image/jpeg" : "m4a";
+      fileType = type === "image" ? "image/jpeg" : "audio/mp4",
+      fieldname = type === "image" ? "photo" : "sound";
 
     setFetching(true);
 
     try {
       const response = await fetch(url, {
         method: "POST",
-        body: createFormData(photo, {}, fileType),
+        body: createFormData(file, {}, fileType, fieldname),
       });
       const status = await response.json();
       console.log("upload succes", status);
@@ -511,7 +511,10 @@ export default function App() {
                 />
                 <MaterialCommunityIcons
                   name="content-save"
-                  onPress={() => savePhoto(prewiewImage.uri)}
+                  onPress={() => {
+                    savePhoto(prewiewImage.uri);
+                    setPrewiewImage(null);
+                  }}
                   style={{
                     alignSelf: "flex-end",
                     margin: 20,
