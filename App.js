@@ -104,17 +104,6 @@ export default function App() {
     setPlaylistIndex(playlistIndex);
   }, [playlistIndex]);
 
-  // async function getRatio() {
-  //   if (!camera) {
-  //     return;
-  //   }
-  //   console.log(camera);
-  //   const ratio = await camera.current.getSupportedRatiosAsync();
-  //   console.log(ratio);
-
-  //   setCameraAspectRatio(ratio[0]);
-  // }
-
   async function loadPlaylist() {
     const assets = await MediaLibrary.getAssetsAsync({
       album: "-2075821635",
@@ -424,73 +413,94 @@ export default function App() {
     if (camera && cameraReady) {
       let { uri } = await camera.current.takePictureAsync();
       setPrewiewImage({ uri });
+      // camera.current.pausePreview();
     }
   }
 
   async function savePhoto(uri) {
-    console.log(uri);
+    let photo = await MediaLibrary.createAssetAsync(uri);
+    sendFile(photo, "image");
     await MediaLibrary.saveToLibraryAsync(uri);
     setPrewiewImage(null);
+    // camera.current.resumePreview();
+  }
+
+  const createFormData = (photo, body, type) => {
+    const data = new FormData();
+
+    data.append("photo", {
+      name: photo.filename,
+      type: type,
+      uri:
+        Platform.OS === "android"
+          ? photo.uri
+          : photo.uri.replace("file://", ""),
+    });
+
+    Object.keys(body).forEach((key) => {
+      data.append(key, body[key]);
+    });
+
+    return data;
+  };
+
+  async function sendFile(photo, type) {
+    const url =
+        type === "image"
+          ? "http://dictaphone.worddict.net/api/upload/image/"
+          : "http://dictaphone.worddict.net/api/upload/sound/",
+      fileType = type === "image" ? "image/jpeg" : "m4a";
+
+    setFetching(true);
+
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        body: createFormData(photo, {}, fileType),
+      });
+      const status = await response.json();
+      console.log("upload succes", status);
+    } catch (error) {
+      console.log("upload error", error);
+    }
+    setFetching(false);
   }
 
   return (
     <>
-      {fetching && (
-        <Animated.View style={{ opacity }}>
-          <MaterialCommunityIcons
-            style={{
-              alignSelf: "flex-end",
-              margin: 20,
-            }}
-            name="cloud-upload"
-            size={ICON_SIZE - 10}
-            color={showCamera ? "white" : "black"}
-          />
-        </Animated.View>
-      )}
       {showCamera ? (
         <View style={{ flex: 1 }}>
           {cameraPermission === null ? (
             <Viev />
           ) : cameraPermission ? (
-            <Camera
-              ref={camera}
-              style={{
-                flex: 1,
-              }}
-              type={cameraType}
-              ratio={cameraAspectRatio}
-              onCameraReady={() => setCameraReady(true)}
-            >
-              {fetching && (
-                <Animated.View style={{ opacity }}>
-                  <MaterialCommunityIcons
-                    style={{
-                      alignSelf: "flex-end",
-                      margin: 20,
-                    }}
-                    name="cloud-upload"
-                    size={ICON_SIZE - 10}
-                    color="white"
-                  />
-                </Animated.View>
-              )}
-              <View
+            prewiewImage ? (
+              <ImageBackground
+                source={prewiewImage}
                 style={{
-                  flex: 1,
-                  backgroundColor: "transparent",
                   flexDirection: "row",
+                  justifyContent: "space-between",
+                  width: DEVICE_WIDTH,
+                  height: DEVICE_HEIGHT,
+                  alignSelf: "center",
                 }}
               >
+                {fetching && (
+                  <Animated.View style={{ opacity }}>
+                    <MaterialCommunityIcons
+                      style={{
+                        alignSelf: "flex-start",
+                        marginTop: 20,
+                        marginHorizontal: 15,
+                      }}
+                      name="cloud-upload"
+                      size={ICON_SIZE - 10}
+                      color="lightgray"
+                    />
+                  </Animated.View>
+                )}
                 <MaterialCommunityIcons
-                  name="camera-switch"
-                  onPress={() => {
-                    setCameraType(
-                      cameraType === Camera.Constants.Type.back
-                        ? Camera.Constants.Type.front
-                        : Camera.Constants.Type.back
-                    );
-                  }}
+                  name="delete-forever"
+                  onPress={() => setPrewiewImage(null)}
                   style={{
                     alignSelf: "flex-end",
                     margin: 20,
@@ -500,42 +510,57 @@ export default function App() {
                   disabled={loading}
                 />
                 <MaterialCommunityIcons
+                  name="content-save"
+                  onPress={() => savePhoto(prewiewImage.uri)}
                   style={{
                     alignSelf: "flex-end",
                     margin: 20,
                   }}
-                  name="microphone"
-                  onPress={() => setShowCamera(false)}
                   size={ICON_SIZE}
                   color="white"
                   disabled={loading}
                 />
-
-                <MaterialCommunityIcons
+              </ImageBackground>
+            ) : (
+              <Camera
+                ref={camera}
+                style={{
+                  flex: 1,
+                }}
+                type={cameraType}
+                ratio={cameraAspectRatio}
+                onCameraReady={() => setCameraReady(true)}
+              >
+                {fetching && (
+                  <Animated.View style={{ opacity }}>
+                    <MaterialCommunityIcons
+                      style={{
+                        alignSelf: "flex-end",
+                        marginTop: 20,
+                        marginHorizontal: 15,
+                      }}
+                      name="cloud-upload"
+                      size={ICON_SIZE - 10}
+                      color="lightgray"
+                    />
+                  </Animated.View>
+                )}
+                <View
                   style={{
-                    alignSelf: "flex-end",
-                    margin: 20,
-                  }}
-                  name="camera-iris"
-                  onPress={snap}
-                  size={ICON_SIZE + 20}
-                  color="white"
-                  disabled={loading}
-                />
-              </View>
-              {prewiewImage && (
-                <ImageBackground
-                  source={prewiewImage}
-                  style={{
+                    flex: 1,
+                    backgroundColor: "transparent",
                     flexDirection: "row",
-                    justifyContent: "space-between",
-                    width: DEVICE_WIDTH,
-                    height: DEVICE_HEIGHT,
                   }}
                 >
                   <MaterialCommunityIcons
-                    name="delete-forever"
-                    onPress={() => setPrewiewImage(null)}
+                    name="camera-switch"
+                    onPress={() => {
+                      setCameraType(
+                        cameraType === Camera.Constants.Type.back
+                          ? Camera.Constants.Type.front
+                          : Camera.Constants.Type.back
+                      );
+                    }}
                     style={{
                       alignSelf: "flex-end",
                       margin: 20,
@@ -545,39 +570,55 @@ export default function App() {
                     disabled={loading}
                   />
                   <MaterialCommunityIcons
-                    name="content-save"
-                    onPress={() => savePhoto(prewiewImage.uri)}
                     style={{
                       alignSelf: "flex-end",
                       margin: 20,
                     }}
+                    name="microphone"
+                    onPress={() => setShowCamera(false)}
                     size={ICON_SIZE}
                     color="white"
                     disabled={loading}
                   />
-                </ImageBackground>
-              )}
-            </Camera>
+
+                  <MaterialCommunityIcons
+                    style={{
+                      alignSelf: "flex-end",
+                      margin: 20,
+                    }}
+                    name="camera-iris"
+                    onPress={snap}
+                    size={ICON_SIZE + 20}
+                    color="white"
+                    disabled={loading}
+                  />
+                </View>
+              </Camera>
+            )
           ) : (
             <Text>No access to camera</Text>
           )}
         </View>
       ) : (
         <View style={styles.playerContainer}>
-          {fetching && (
-            <Animated.View style={{ opacity }}>
-              <MaterialCommunityIcons
-                style={{
-                  alignSelf: "flex-end",
-                  margin: 20,
-                }}
-                name="cloud-upload"
-                size={ICON_SIZE - 10}
-                color="black"
-              />
-            </Animated.View>
-          )}
-          <Text style={styles.title}> -Dictaphone- </Text>
+          <View style={{ flexDirection: "row" }}>
+            <Text style={styles.title}> -Dictaphone- </Text>
+            {fetching && (
+              <Animated.View style={{ opacity }}>
+                <MaterialCommunityIcons
+                  style={{
+                    alignSelf: "flex-end",
+                    left: 50,
+                    marginTop: 20,
+                  }}
+                  name="cloud-upload"
+                  size={ICON_SIZE - 10}
+                  color="black"
+                />
+              </Animated.View>
+            )}
+          </View>
+
           <ScrollView style={styles.playlist}>
             <Text style={styles.playlisttitle}>Record list</Text>
             {playlist.map((item, index) => {
@@ -772,12 +813,12 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     alignItems: "center",
     justifyContent: "space-around",
-    margin: 10,
+    marginHorizontal: 15,
+    marginBottom: 15,
   },
   title: {
     alignSelf: "center",
     paddingHorizontal: 5,
-    marginTop: 30,
     fontSize: 25,
     fontWeight: "bold",
   },

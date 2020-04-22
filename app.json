@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "rn-microphone",
-    "slug": "rn-microphone",
+    "name": "Dictaphone",
+    "slug": "Dictaphone",
     "platforms": ["ios", "android", "web"],
     "version": "1.0.0",
     "orientation": "portrait",
