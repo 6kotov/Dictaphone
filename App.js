@@ -4,6 +4,7 @@ import * as FileSystem from "expo-file-system";
 import * as MediaLibrary from "expo-media-library";
 import { Audio } from "expo-av";
 import { Camera } from "expo-camera";
+import ErrorBoundary from "./ErrorBoundary";
 import {
   StyleSheet,
   Text,
@@ -48,7 +49,7 @@ export default function App() {
   const [playlist, setPlaylist] = useState([]);
   const [playlistIndex, setPlaylistIndex] = useState(null);
   const [prewiewImage, setPrewiewImage] = useState(null);
-  const [fetching, setFetching] = useState(true);
+  const [fetching, setFetching] = useState(false);
   let camera = useRef(null);
   const opacityAnim = useRef(new Animated.Value(0)).current;
   const opacity = opacityAnim.interpolate({
@@ -70,7 +71,7 @@ export default function App() {
 
   useEffect(() => {
     (async () => {
-      const { status } = await MediaLibrary.getPermissionsAsync();
+      const { status } = await MediaLibrary.requestPermissionsAsync();
       setMediaLibPremission(status === "granted");
     })();
 
@@ -138,7 +139,7 @@ export default function App() {
       setSoundPosition(null);
       setIsPlaybackAllowed(false);
       if (status.error) {
-        console.log(`FATAL PLAYER ERROR: ${status.error}`);
+        alert(`FATAL PLAYER ERROR: ${status.error}`);
       }
     }
   }
@@ -147,10 +148,15 @@ export default function App() {
     setLoading(true);
     try {
       if (!recordPremission) {
-        askForAudioPremissions();
+        const { status } = await Permissions.askAsync(
+          Permissions.AUDIO_RECORDING,
+          Permissions.CAMERA_ROLL
+        );
+        setRecordPremission(status === "granted");
       }
       if (!mediaLibPremission) {
-        askForMeidaPremissions;
+        const { status } = await MediaLibrary.requestPermissionsAsync();
+        setMediaLibPremission(status === "granted");
       }
       if (soundPlayer !== null) {
         await soundPlayer.unloadAsync();
@@ -186,7 +192,7 @@ export default function App() {
       setRecColor("red");
       setLoading(false);
     } catch (error) {
-      console.log("Can`t start recording! ", error);
+      alert("Can`t start recording! ", error);
     }
   }
 
@@ -228,7 +234,7 @@ export default function App() {
       setSoundPlayer(sound);
       setLoading(false);
     } catch (error) {
-      console.log("Error? cant stop recording", error);
+      alert("Error? cant stop recording", error);
     }
   }
 
@@ -271,7 +277,7 @@ export default function App() {
       sound.playAsync();
       setLoading(false);
     } catch (error) {
-      console.log("Error, cant start playback:", error);
+      alert("Error, cant start playback:", error);
     }
   }
 
@@ -286,7 +292,7 @@ export default function App() {
 
       loadPlaylist();
     } catch (error) {
-      console.log("Cant remove record:" + error);
+      alert("Cant remove record:" + error);
     }
   }
 
@@ -419,9 +425,14 @@ export default function App() {
   }
 
   async function savePhoto(uri) {
-    let photo = await MediaLibrary.createAssetAsync(uri);
-    sendFile(photo, "image");
-    // await MediaLibrary.saveToLibraryAsync(uri);
+    try {
+      let photo = await MediaLibrary.createAssetAsync(uri);
+      sendFile(photo, "image");
+      // await MediaLibrary.saveToLibraryAsync(uri);
+      setPrewiewImage(null);
+    } catch (error) {
+      alert("Error? cant save photo", error);
+    }
   }
 
   const createFormData = (photo, body, type, fieldname) => {
@@ -459,355 +470,312 @@ export default function App() {
         body: createFormData(file, {}, fileType, fieldname),
       });
       const status = await response.json();
-      console.log("upload succes", status);
     } catch (error) {
-      console.log("upload error", error);
+      alert("upload error", error);
     }
     setFetching(false);
   }
 
   return (
     <>
-      {showCamera ? (
-        <View style={{ flex: 1 }}>
-          {cameraPermission === null ? (
-            <Viev />
-          ) : cameraPermission ? (
-            prewiewImage ? (
-              <ImageBackground
-                source={prewiewImage}
+      <ErrorBoundary>
+        {showCamera ? (
+          <View style={{ flex: 1 }}>
+            {cameraPermission === null ? (
+              <Viev />
+            ) : cameraPermission ? (
+              prewiewImage ? (
+                <ImageBackground
+                  source={prewiewImage}
+                  style={styles.imagePreview}
+                >
+                  <MaterialCommunityIcons
+                    name="delete-forever"
+                    onPress={() => setPrewiewImage(null)}
+                    style={styles.previewControlButton}
+                    size={ICON_SIZE}
+                    color="white"
+                    disabled={loading}
+                  />
+                  <MaterialCommunityIcons
+                    name="content-save"
+                    onPress={() => savePhoto(prewiewImage.uri)}
+                    style={styles.previewControlButton}
+                    size={ICON_SIZE}
+                    color="white"
+                    disabled={loading}
+                  />
+                </ImageBackground>
+              ) : (
+                <Camera
+                  ref={camera}
+                  style={{
+                    flex: 1,
+                  }}
+                  type={cameraType}
+                  ratio={cameraAspectRatio}
+                  onCameraReady={() => setCameraReady(true)}
+                >
+                  <Animated.View style={{ opacity }}>
+                    {fetching && (
+                      <MaterialCommunityIcons
+                        style={styles.fetchingIconCamera}
+                        name="cloud-upload"
+                        size={ICON_SIZE - 10}
+                        color="lightgray"
+                      />
+                    )}
+                  </Animated.View>
+                  <View style={styles.cameraPreview}>
+                    <MaterialCommunityIcons
+                      style={styles.previewControlButton}
+                      name="microphone"
+                      onPress={() => setShowCamera(false)}
+                      size={ICON_SIZE}
+                      color="white"
+                      disabled={loading}
+                    />
+
+                    <MaterialCommunityIcons
+                      style={styles.previewControlButton}
+                      name="camera-iris"
+                      onPress={snap}
+                      size={ICON_SIZE + 20}
+                      color="white"
+                      disabled={loading}
+                    />
+                    <MaterialCommunityIcons
+                      name="camera-switch"
+                      onPress={() => {
+                        setCameraType(
+                          cameraType === Camera.Constants.Type.back
+                            ? Camera.Constants.Type.front
+                            : Camera.Constants.Type.back
+                        );
+                      }}
+                      style={styles.previewControlButton}
+                      size={ICON_SIZE}
+                      color="white"
+                      disabled={loading}
+                    />
+                  </View>
+                </Camera>
+              )
+            ) : (
+              <Text style={styles.NoAcccessCamera}>No access to camera</Text>
+            )}
+          </View>
+        ) : (
+          <View style={styles.playerContainer}>
+            <View
+              style={{
+                flexDirection: "row",
+                width: DEVICE_WIDTH - 20,
+                justifyContent: "space-between",
+              }}
+            >
+              <Text style={styles.title}> -Dictaphone- </Text>
+              <View
                 style={{
-                  flexDirection: "row",
-                  justifyContent: "space-between",
-                  width: DEVICE_WIDTH,
-                  height: DEVICE_HEIGHT,
                   alignSelf: "center",
                 }}
               >
-                <Animated.View style={{ opacity }}>
-                  {fetching && (
+                {fetching && (
+                  <Animated.View style={{ opacity }}>
                     <MaterialCommunityIcons
-                      style={{
-                        alignSelf: "flex-end",
-                        marginTop: 20,
-                        marginHorizontal: 15,
-                      }}
                       name="cloud-upload"
                       size={ICON_SIZE - 10}
-                      color="lightgray"
-                    />
-                  )}
-                </Animated.View>
-                <MaterialCommunityIcons
-                  name="delete-forever"
-                  onPress={() => setPrewiewImage(null)}
-                  style={{
-                    alignSelf: "flex-end",
-                    margin: 20,
-                  }}
-                  size={ICON_SIZE}
-                  color="white"
-                  disabled={loading}
-                />
-                <MaterialCommunityIcons
-                  name="content-save"
-                  onPress={() => {
-                    savePhoto(prewiewImage.uri);
-                    setPrewiewImage(null);
-                  }}
-                  style={{
-                    alignSelf: "flex-end",
-                    margin: 20,
-                  }}
-                  size={ICON_SIZE}
-                  color="white"
-                  disabled={loading}
-                />
-              </ImageBackground>
-            ) : (
-              <Camera
-                ref={camera}
-                style={{
-                  flex: 1,
-                }}
-                type={cameraType}
-                ratio={cameraAspectRatio}
-                onCameraReady={() => setCameraReady(true)}
-              >
-                <Animated.View style={{ opacity }}>
-                  {fetching && (
-                    <MaterialCommunityIcons
-                      style={{
-                        alignSelf: "flex-end",
-                        marginTop: 20,
-                        marginHorizontal: 15,
-                      }}
-                      name="cloud-upload"
-                      size={ICON_SIZE - 10}
-                      color="lightgray"
-                    />
-                  )}
-                </Animated.View>
-
-                <View
-                  style={{
-                    flex: 1,
-                    backgroundColor: "transparent",
-                    flexDirection: "row",
-                  }}
-                >
-                  <MaterialCommunityIcons
-                    name="camera-switch"
-                    onPress={() => {
-                      setCameraType(
-                        cameraType === Camera.Constants.Type.back
-                          ? Camera.Constants.Type.front
-                          : Camera.Constants.Type.back
-                      );
-                    }}
-                    style={{
-                      alignSelf: "flex-end",
-                      margin: 20,
-                    }}
-                    size={ICON_SIZE}
-                    color="white"
-                    disabled={loading}
-                  />
-                  <MaterialCommunityIcons
-                    style={{
-                      alignSelf: "flex-end",
-                      margin: 20,
-                    }}
-                    name="microphone"
-                    onPress={() => setShowCamera(false)}
-                    size={ICON_SIZE}
-                    color="white"
-                    disabled={loading}
-                  />
-
-                  <MaterialCommunityIcons
-                    style={{
-                      alignSelf: "flex-end",
-                      margin: 20,
-                    }}
-                    name="camera-iris"
-                    onPress={snap}
-                    size={ICON_SIZE + 20}
-                    color="white"
-                    disabled={loading}
-                  />
-                </View>
-              </Camera>
-            )
-          ) : (
-            <Text>No access to camera</Text>
-          )}
-        </View>
-      ) : (
-        <View style={styles.playerContainer}>
-          <View style={{ flexDirection: "row" }}>
-            <Text style={styles.title}> -Dictaphone- </Text>
-
-            <Animated.View style={{ opacity }}>
-              {fetching && (
-                <MaterialCommunityIcons
-                  style={{
-                    alignSelf: "flex-end",
-                    left: 50,
-                    marginTop: 20,
-                  }}
-                  name="cloud-upload"
-                  size={ICON_SIZE - 10}
-                  color="black"
-                />
-              )}
-            </Animated.View>
-          </View>
-
-          <ScrollView style={styles.playlist}>
-            <Text style={styles.playlisttitle}>Record list</Text>
-            {playlist.map((item, index) => {
-              return (
-                <TouchableOpacity
-                  key={index}
-                  style={[
-                    styles.playlistItem,
-                    {
-                      borderColor: index === playlistIndex ? "gray" : "black",
-                      backgroundColor:
-                        index === playlistIndex ? "lightgray" : "white",
-                    },
-                  ]}
-                  onPress={() => playItem(index)}
-                >
-                  <Text>{getRecordName(item.modificationTime)}</Text>
-                  <View style={styles.playlistItemTimeAndDelete}>
-                    <Text>{getDuration(item.duration * 1000)}</Text>
-                    <MaterialCommunityIcons
-                      name="delete-forever"
-                      onPress={() => deleteItem(index, item)}
-                      size={ICON_SIZE - 15}
                       color="black"
                     />
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-          <View style={styles.recordContainer}>
-            <TouchableOpacity
-              onPress={onRecordPressed}
-              activeOpacity={DISABLED_OPACITY}
-            >
-              <MaterialCommunityIcons
-                name="record-rec"
-                size={ICON_SIZE + 10}
-                color={recColor}
-              />
-            </TouchableOpacity>
-            <MaterialCommunityIcons
-              name="camera"
-              onPress={() => setShowCamera(true)}
-              size={ICON_SIZE}
-              color="black"
-              disabled={loading}
-            />
-            <View style={styles.RecordTimeStamp}>
-              <Text style={styles.liveRecord}>
-                {isRecording ? "LIVE " : " "}
-              </Text>
-              <Text style={styles.recordTime}>
-                {getDuration(recordingDuration)}
-              </Text>
+                  </Animated.View>
+                )}
+              </View>
             </View>
-          </View>
-          <View
-            style={[
-              styles.playBackContainer,
-              { opacity: !isPlaybackAllowed ? DISABLED_OPACITY : 1.0 },
-            ]}
-          >
-            <Slider
-              style={styles.playbackSlider}
-              value={getSeekSliderPosition()}
-              onValueChange={onSeekSliderValueChange}
-              onSlidingComplete={onSeekSliderSlidingComplete}
-              disabled={!isPlaybackAllowed || loading}
-            />
-            <View style={styles.player}>
+
+            <ScrollView style={styles.playlist}>
+              <Text style={styles.playlisttitle}>Record list</Text>
+              {playlist.map((item, index) => {
+                return (
+                  <TouchableOpacity
+                    key={index}
+                    style={[
+                      styles.playlistItem,
+                      {
+                        borderColor: index === playlistIndex ? "gray" : "black",
+                        backgroundColor:
+                          index === playlistIndex ? "lightgray" : "white",
+                      },
+                    ]}
+                    onPress={() => playItem(index)}
+                  >
+                    <Text>{getRecordName(item.modificationTime)}</Text>
+                    <View style={styles.playlistItemTimeAndDelete}>
+                      <Text>{getDuration(item.duration * 1000)}</Text>
+                      <MaterialCommunityIcons
+                        name="delete-forever"
+                        onPress={() => deleteItem(index, item)}
+                        size={ICON_SIZE - 15}
+                        color="black"
+                      />
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+            <View style={styles.recordContainer}>
               <TouchableOpacity
+                onPress={onRecordPressed}
                 activeOpacity={DISABLED_OPACITY}
-                style={styles.PlayStopPause}
               >
                 <MaterialCommunityIcons
-                  name="skip-backward"
-                  onPress={onBackward}
-                  size={ICON_SIZE}
-                  color="black"
-                  style={{
-                    opacity:
+                  name="record-rec"
+                  size={ICON_SIZE + 10}
+                  color={recColor}
+                />
+              </TouchableOpacity>
+              <View style={styles.RecordTimeStamp}>
+                <Text style={styles.liveRecord}>
+                  {isRecording ? "LIVE " : " "}
+                </Text>
+                <Text style={styles.recordTime}>
+                  {getDuration(recordingDuration)}
+                </Text>
+              </View>
+            </View>
+            <View style={[styles.playBackContainer]}>
+              <Slider
+                style={styles.playbackSlider}
+                value={getSeekSliderPosition()}
+                onValueChange={onSeekSliderValueChange}
+                onSlidingComplete={onSeekSliderSlidingComplete}
+                disabled={!isPlaybackAllowed || loading}
+              />
+              <View
+                style={[
+                  styles.player,
+                  { opacity: !isPlaybackAllowed ? DISABLED_OPACITY : 1.0 },
+                ]}
+              >
+                <TouchableOpacity
+                  activeOpacity={DISABLED_OPACITY}
+                  style={styles.PlayStopPause}
+                >
+                  <MaterialCommunityIcons
+                    name="skip-backward"
+                    onPress={onBackward}
+                    size={ICON_SIZE}
+                    color="black"
+                    style={{
+                      opacity:
+                        !isPlaybackAllowed ||
+                        loading ||
+                        !playlist[playlistIndex - 1]
+                          ? DISABLED_OPACITY
+                          : 1,
+                    }}
+                    disabled={
                       !isPlaybackAllowed ||
                       loading ||
                       !playlist[playlistIndex - 1]
-                        ? DISABLED_OPACITY
-                        : 1,
-                  }}
-                  disabled={
-                    !isPlaybackAllowed ||
-                    loading ||
-                    !playlist[playlistIndex - 1]
-                  }
-                />
+                    }
+                  />
 
-                {!isPlaying ? (
+                  {!isPlaying ? (
+                    <MaterialCommunityIcons
+                      name="play"
+                      onPress={startPlay}
+                      size={ICON_SIZE}
+                      color="black"
+                      disabled={!isPlaybackAllowed || loading}
+                    />
+                  ) : (
+                    <MaterialCommunityIcons
+                      name="pause"
+                      onPress={pausePlay}
+                      size={ICON_SIZE}
+                      color="black"
+                      disabled={!isPlaybackAllowed || loading}
+                    />
+                  )}
                   <MaterialCommunityIcons
-                    name="play"
-                    onPress={startPlay}
+                    name="stop"
+                    onPress={stopPlay}
                     size={ICON_SIZE}
                     color="black"
                     disabled={!isPlaybackAllowed || loading}
                   />
-                ) : (
+
                   <MaterialCommunityIcons
-                    name="pause"
-                    onPress={pausePlay}
+                    name="skip-forward"
+                    onPress={onForward}
                     size={ICON_SIZE}
                     color="black"
-                    disabled={!isPlaybackAllowed || loading}
-                  />
-                )}
-                <MaterialCommunityIcons
-                  name="stop"
-                  onPress={stopPlay}
-                  size={ICON_SIZE}
-                  color="black"
-                  disabled={!isPlaybackAllowed || loading}
-                />
-
-                <MaterialCommunityIcons
-                  name="skip-forward"
-                  onPress={onForward}
-                  size={ICON_SIZE}
-                  color="black"
-                  style={{
-                    opacity:
+                    style={{
+                      opacity:
+                        !isPlaybackAllowed ||
+                        loading ||
+                        !playlist[playlistIndex + 1]
+                          ? DISABLED_OPACITY
+                          : 1,
+                    }}
+                    disabled={
                       !isPlaybackAllowed ||
                       loading ||
                       !playlist[playlistIndex + 1]
-                        ? DISABLED_OPACITY
-                        : 1,
+                    }
+                  />
+                </TouchableOpacity>
+                <Text style={styles.playTime}>
+                  {getDuration(soundPosition)}/{getDuration(soundDuration)}
+                </Text>
+              </View>
+
+              <View style={styles.volumeContainer}>
+                <MaterialCommunityIcons
+                  style={{
+                    marginHorizontal: 4,
+                    right: 4,
                   }}
-                  disabled={
-                    !isPlaybackAllowed ||
-                    loading ||
-                    !playlist[playlistIndex + 1]
-                  }
-                />
-              </TouchableOpacity>
-              <Text style={styles.playTime}>
-                {getDuration(soundPosition)}/{getDuration(soundDuration)}
-              </Text>
-            </View>
-            <View style={styles.volumeContainer}>
-              {isMuted ? (
-                <MaterialCommunityIcons
-                  name="volume-off"
+                  name="camera"
+                  onPress={() => setShowCamera(true)}
                   size={ICON_SIZE}
+                  color="black"
+                  disabled={loading}
+                />
+
+                <MaterialCommunityIcons
+                  name={isMuted ? "volume-off" : "volume-high"}
+                  size={ICON_SIZE}
+                  style={{
+                    opacity: !isPlaybackAllowed ? DISABLED_OPACITY : 1.0,
+                  }}
                   color="black"
                   onPress={OnMutePressed}
                   disabled={!isPlaybackAllowed || loading}
                 />
-              ) : (
-                <MaterialCommunityIcons
-                  name="volume-high"
-                  size={ICON_SIZE}
-                  color="black"
-                  onPress={OnMutePressed}
+
+                <Slider
+                  style={styles.volumeSlider}
+                  value={1.0}
+                  onValueChange={onVolumeChange}
                   disabled={!isPlaybackAllowed || loading}
                 />
-              )}
 
-              <Slider
-                style={styles.volumeSlider}
-                value={1.0}
-                onValueChange={onVolumeChange}
-                disabled={!isPlaybackAllowed || loading}
-              />
-
-              <MaterialCommunityIcons
-                name="loop"
-                size={ICON_SIZE}
-                color="black"
-                onPress={onLoopPressed}
-                disabled={!isPlaybackAllowed || loading}
-                style={{
-                  opacity: !isLooping ? DISABLED_OPACITY : 1,
-                }}
-              />
+                <MaterialCommunityIcons
+                  name="loop"
+                  size={ICON_SIZE}
+                  color="black"
+                  onPress={onLoopPressed}
+                  disabled={!isPlaybackAllowed || loading}
+                  style={{
+                    opacity: !isLooping ? DISABLED_OPACITY : 1,
+                  }}
+                />
+              </View>
             </View>
           </View>
-        </View>
-      )}
+        )}
+      </ErrorBoundary>
     </>
   );
 }
@@ -818,8 +786,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     alignItems: "center",
     justifyContent: "space-around",
-    marginHorizontal: 15,
-    marginBottom: 15,
+    margin: 15,
   },
   title: {
     alignSelf: "center",
@@ -903,4 +870,27 @@ const styles = StyleSheet.create({
     width: 70,
     justifyContent: "space-between",
   },
+  imagePreview: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    width: DEVICE_WIDTH,
+    height: DEVICE_HEIGHT,
+    alignSelf: "center",
+  },
+  previewControlButton: {
+    alignSelf: "flex-end",
+    margin: 20,
+  },
+  fetchingIconCamera: {
+    alignSelf: "flex-end",
+    marginTop: 20,
+    marginHorizontal: 15,
+  },
+  cameraPreview: {
+    flex: 1,
+    backgroundColor: "transparent",
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  NoAcccessCamera: { margin: 20 },
 });

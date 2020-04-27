@@ -19,7 +19,15 @@
       "supportsTablet": true
     },
     "android": {
-      "permissions": ["RECORD_AUDIO"],
+      "permissions": [
+        "RECORD_AUDIO",
+        "CAMERA",
+        "com.sec.android.provider.badge.permission.READ",
+        "com.sec.android.provider.badge.permission.WRITE",
+        "WRITE_EXTERNAL_STORAGE",
+        "MANAGE_DOCUMENTS",
+        "READ_EXTERNAL_STORAGE"
+      ],
       "package": "net.worddict",
       "versionCode": 1
     }
