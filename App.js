@@ -484,11 +484,11 @@ export default function App() {
                   alignSelf: "center",
                 }}
               >
-                {fetching && (
-                  <Animated.View style={{ opacity }}>
+                <Animated.View style={{ opacity }}>
+                  {fetching && (
                     <MaterialCommunityIcons
                       style={{
-                        alignSelf: "flex-start",
+                        alignSelf: "flex-end",
                         marginTop: 20,
                         marginHorizontal: 15,
                       }}
@@ -496,8 +496,8 @@ export default function App() {
                       size={ICON_SIZE - 10}
                       color="lightgray"
                     />
-                  </Animated.View>
-                )}
+                  )}
+                </Animated.View>
                 <MaterialCommunityIcons
                   name="delete-forever"
                   onPress={() => setPrewiewImage(null)}
@@ -534,8 +534,8 @@ export default function App() {
                 ratio={cameraAspectRatio}
                 onCameraReady={() => setCameraReady(true)}
               >
-                {fetching && (
-                  <Animated.View style={{ opacity }}>
+                <Animated.View style={{ opacity }}>
+                  {fetching && (
                     <MaterialCommunityIcons
                       style={{
                         alignSelf: "flex-end",
@@ -546,8 +546,9 @@ export default function App() {
                       size={ICON_SIZE - 10}
                       color="lightgray"
                     />
-                  </Animated.View>
-                )}
+                  )}
+                </Animated.View>
+
                 <View
                   style={{
                     flex: 1,
@@ -606,8 +607,9 @@ export default function App() {
         <View style={styles.playerContainer}>
           <View style={{ flexDirection: "row" }}>
             <Text style={styles.title}> -Dictaphone- </Text>
-            {fetching && (
-              <Animated.View style={{ opacity }}>
+
+            <Animated.View style={{ opacity }}>
+              {fetching && (
                 <MaterialCommunityIcons
                   style={{
                     alignSelf: "flex-end",
@@ -618,8 +620,8 @@ export default function App() {
                   size={ICON_SIZE - 10}
                   color="black"
                 />
-              </Animated.View>
-            )}
+              )}
+            </Animated.View>
           </View>
 
           <ScrollView style={styles.playlist}>
