@@ -19,9 +19,6 @@
     "react-dom": "~16.9.0",
     "react-native": "https://github.com/expo/react-native/archive/sdk-37.0.0.tar.gz",
     "react-native-web": "~0.11.7",
-    "react-redux": "^7.2.0",
-    "redux": "^4.0.5",
-    "redux-thunk": "^2.3.0",
     "expo-media-library": "~8.1.0",
     "expo-camera": "~8.2.0"
   },

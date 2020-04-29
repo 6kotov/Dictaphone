@@ -106,12 +106,16 @@ export default function App() {
   }, [playlistIndex]);
 
   async function loadPlaylist() {
-    const assets = await MediaLibrary.getAssetsAsync({
-      album: "-2075821635",
-      first: 50,
-      mediaType: [MediaLibrary.MediaType.audio],
-    });
-    setPlaylist(assets.assets);
+    try {
+      const assets = await MediaLibrary.getAssetsAsync({
+        album: "-2075821635",
+        first: 50,
+        mediaType: [MediaLibrary.MediaType.audio],
+      });
+      setPlaylist(assets.assets);
+    } catch (error) {
+      console.log("Cant load playlist", error);
+    }
   }
 
   function updateScreenForRecordStatus(status) {
@@ -139,7 +143,7 @@ export default function App() {
       setSoundPosition(null);
       setIsPlaybackAllowed(false);
       if (status.error) {
-        alert(`FATAL PLAYER ERROR: ${status.error}`);
+        console.log(`FATAL PLAYER ERROR: ${status.error}`);
       }
     }
   }
@@ -192,7 +196,7 @@ export default function App() {
       setRecColor("red");
       setLoading(false);
     } catch (error) {
-      alert("Can`t start recording! ", error);
+      console.log("Can`t start recording! ", error);
     }
   }
 
@@ -234,7 +238,7 @@ export default function App() {
       setSoundPlayer(sound);
       setLoading(false);
     } catch (error) {
-      alert("Error? cant stop recording", error);
+      console.log("Error? cant stop recording", error);
     }
   }
 
@@ -277,7 +281,7 @@ export default function App() {
       sound.playAsync();
       setLoading(false);
     } catch (error) {
-      alert("Error, cant start playback:", error);
+      console.log("Error, cant start playback:", error);
     }
   }
 
@@ -292,7 +296,7 @@ export default function App() {
 
       loadPlaylist();
     } catch (error) {
-      alert("Cant remove record:" + error);
+      console.log("Cant remove record:" + error);
     }
   }
 
@@ -431,7 +435,7 @@ export default function App() {
       // await MediaLibrary.saveToLibraryAsync(uri);
       setPrewiewImage(null);
     } catch (error) {
-      alert("Error? cant save photo", error);
+      console.log("Error? cant save photo", error);
     }
   }
 
@@ -471,7 +475,7 @@ export default function App() {
       });
       const status = await response.json();
     } catch (error) {
-      alert("upload error", error);
+      console.log("upload error", error);
     }
     setFetching(false);
   }
@@ -786,7 +790,8 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     alignItems: "center",
     justifyContent: "space-around",
-    margin: 15,
+    marginHorizontal: 15,
+    marginVertical: 30,
   },
   title: {
     alignSelf: "center",
