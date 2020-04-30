@@ -90,7 +90,9 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    loadPlaylist();
+    (async () => {
+      await loadPlaylist();
+    })();
   }, []);
 
   useEffect(() => {
@@ -107,12 +109,17 @@ export default function App() {
 
   async function loadPlaylist() {
     try {
-      const assets = await MediaLibrary.getAssetsAsync({
-        album: "-2075821635",
-        first: 50,
-        mediaType: [MediaLibrary.MediaType.audio],
-      });
-      setPlaylist(assets.assets);
+      const queryAlbum = await MediaLibrary.getAlbumAsync("dictaphone");
+      if (queryAlbum) {
+        const assets = await MediaLibrary.getAssetsAsync({
+          album: queryAlbum,
+          first: 50,
+          mediaType: [MediaLibrary.MediaType.audio],
+        });
+        setPlaylist(assets.assets);
+      } else {
+        setPlaylist([]);
+      }
     } catch (error) {
       console.log("Cant load playlist", error);
     }
@@ -189,6 +196,7 @@ export default function App() {
       await recording.prepareToRecordAsync(
         Audio.RECORDING_OPTIONS_PRESET_HIGH_QUALITY
       );
+
       recording.setOnRecordingStatusUpdate(updateScreenForRecordStatus);
 
       await recording.startAsync();
@@ -207,9 +215,18 @@ export default function App() {
       setRecColor("black");
       const info = await FileSystem.getInfoAsync(recorder.getURI());
       const sounforSend = await MediaLibrary.createAssetAsync(info.uri);
-      // await MediaLibrary.saveToLibraryAsync(info.uri);
+      const queryAlbum = await MediaLibrary.getAlbumAsync("dictaphone");
+      queryAlbum
+        ? await MediaLibrary.addAssetsToAlbumAsync(
+            [sounforSend],
+            queryAlbum,
+            false
+          )
+        : await MediaLibrary.createAlbumAsync("dictaphone", sounforSend, false);
+
       sendFile(sounforSend, "sound");
-      loadPlaylist();
+      await loadPlaylist();
+
       setRecordingDuration(null);
       setPlaylistIndex(playlist.length);
 
@@ -238,7 +255,7 @@ export default function App() {
       setSoundPlayer(sound);
       setLoading(false);
     } catch (error) {
-      console.log("Error? cant stop recording", error);
+      console.log("Error, cant stop recording", error);
     }
   }
 
@@ -294,7 +311,7 @@ export default function App() {
       }
       await MediaLibrary.deleteAssetsAsync([item]);
 
-      loadPlaylist();
+      await loadPlaylist();
     } catch (error) {
       console.log("Cant remove record:" + error);
     }
@@ -459,6 +476,7 @@ export default function App() {
   };
 
   async function sendFile(file, type) {
+    console.log("sending", file);
     const url =
         type === "image"
           ? "http://dictaphone.worddict.net/api/upload/image/"
@@ -467,13 +485,14 @@ export default function App() {
       fieldname = type === "image" ? "photo" : "sound";
 
     setFetching(true);
-
+    ss;
     try {
       const response = await fetch(url, {
         method: "POST",
         body: createFormData(file, {}, fileType, fieldname),
       });
       const status = await response.json();
+      console.log(status);
     } catch (error) {
       console.log("upload error", error);
     }
@@ -852,6 +871,7 @@ const styles = StyleSheet.create({
   },
   PlayStopPause: {
     flexDirection: "row",
+    marginBottom: 15,
   },
   player: {
     flexDirection: "row",
