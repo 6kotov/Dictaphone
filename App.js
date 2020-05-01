@@ -107,9 +107,14 @@ export default function App() {
     setPlaylistIndex(playlistIndex);
   }, [playlistIndex]);
 
+  async function getAlbum() {
+    const album = await MediaLibrary.getAlbumAsync("dictaphone");
+    return album ? album : false;
+  }
+
   async function loadPlaylist() {
     try {
-      const queryAlbum = await MediaLibrary.getAlbumAsync("dictaphone");
+      const queryAlbum = await getAlbum();
       if (queryAlbum) {
         const assets = await MediaLibrary.getAssetsAsync({
           album: queryAlbum,
@@ -215,18 +220,9 @@ export default function App() {
       setRecColor("black");
       const info = await FileSystem.getInfoAsync(recorder.getURI());
       const sounforSend = await MediaLibrary.createAssetAsync(info.uri);
-      const queryAlbum = await MediaLibrary.getAlbumAsync("dictaphone");
-      queryAlbum
-        ? await MediaLibrary.addAssetsToAlbumAsync(
-            [sounforSend],
-            queryAlbum,
-            false
-          )
-        : await MediaLibrary.createAlbumAsync("dictaphone", sounforSend, false);
-
-      sendFile(sounforSend, "sound");
+      await sendFile(sounforSend, "sound");
+      await saveToAlbum(sounforSend);
       await loadPlaylist();
-
       setRecordingDuration(null);
       setPlaylistIndex(playlist.length);
 
@@ -259,7 +255,7 @@ export default function App() {
     }
   }
 
-  async function playItem(playbackItemIndex) {
+  async function playItem(playbackItemIndex, onDelete = false) {
     try {
       setLoading(true);
       if (soundPlayer !== null) {
@@ -289,13 +285,15 @@ export default function App() {
           isLooping,
           isMuted,
           volume,
-          shouldPlay,
+          shouldPlay: !onDelete,
         },
         updateScreenForSoundStatus
       );
 
       setSoundPlayer(sound);
-      sound.playAsync();
+      if (!onDelete) {
+        sound.playAsync();
+      }
       setLoading(false);
     } catch (error) {
       console.log("Error, cant start playback:", error);
@@ -303,13 +301,16 @@ export default function App() {
   }
 
   async function deleteItem(id, item) {
+    const queryAlbum = await getAlbum();
     try {
       if (id === playlistIndex) {
-        soundPlayer.stopAsync();
-        setShouldPlay(false);
-        playItem(playlistIndex - 1);
+        if (soundPlayer !== null) {
+          soundPlayer.stopAsync();
+          setShouldPlay(false);
+          playItem(playlistIndex - 1, true);
+        }
       }
-      await MediaLibrary.deleteAssetsAsync([item]);
+      await MediaLibrary.removeAssetsFromAlbumAsync([item], queryAlbum);
 
       await loadPlaylist();
     } catch (error) {
@@ -448,12 +449,19 @@ export default function App() {
   async function savePhoto(uri) {
     try {
       let photo = await MediaLibrary.createAssetAsync(uri);
-      sendFile(photo, "image");
-      // await MediaLibrary.saveToLibraryAsync(uri);
+      await sendFile(photo, "image");
+      await saveToAlbum(photo);
       setPrewiewImage(null);
     } catch (error) {
       console.log("Error? cant save photo", error);
     }
+  }
+
+  async function saveToAlbum(asset) {
+    const queryAlbum = await getAlbum();
+    queryAlbum
+      ? await MediaLibrary.addAssetsToAlbumAsync([asset], queryAlbum, false)
+      : await MediaLibrary.createAlbumAsync("dictaphone", asset, false);
   }
 
   const createFormData = (photo, body, type, fieldname) => {
@@ -476,7 +484,6 @@ export default function App() {
   };
 
   async function sendFile(file, type) {
-    console.log("sending", file);
     const url =
         type === "image"
           ? "http://dictaphone.worddict.net/api/upload/image/"
@@ -485,14 +492,11 @@ export default function App() {
       fieldname = type === "image" ? "photo" : "sound";
 
     setFetching(true);
-    ss;
     try {
-      const response = await fetch(url, {
+      await fetch(url, {
         method: "POST",
         body: createFormData(file, {}, fileType, fieldname),
       });
-      const status = await response.json();
-      console.log(status);
     } catch (error) {
       console.log("upload error", error);
     }
