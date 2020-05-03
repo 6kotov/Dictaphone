@@ -114,17 +114,34 @@ export default function App() {
 
   async function loadPlaylist() {
     try {
-      const queryAlbum = await getAlbum();
-      if (queryAlbum) {
-        const assets = await MediaLibrary.getAssetsAsync({
-          album: queryAlbum,
-          first: 50,
-          mediaType: [MediaLibrary.MediaType.audio],
-        });
-        setPlaylist(assets.assets);
-      } else {
-        setPlaylist([]);
-      }
+      // const queryAlbum = await getAlbum();
+      // if (queryAlbum) {
+      //   const assets = await MediaLibrary.getAssetsAsync({
+      //     album: queryAlbum,
+      //     first: 50,
+      //     mediaType: [MediaLibrary.MediaType.audio],
+      //   });
+
+      const assetsQuery = await MediaLibrary.getAssetsAsync({
+        first: 50,
+        mediaType: [MediaLibrary.MediaType.audio],
+      });
+      const ww = await FileSystem.readDirectoryAsync(
+        FileSystem.documentDirectory
+      );
+      const assets = {
+        assets: [],
+      };
+      console.log("Document directory", FileSystem.documentDirectory, ww);
+      ww.map((item) =>
+        assets.assets.push({
+          name: item,
+          uri: FileSystem.documentDirectory + item,
+        })
+      );
+
+      console.log("Audio Assets from media library", assetsQuery);
+      setPlaylist(assets.assets);
     } catch (error) {
       console.log("Cant load playlist", error);
     }
@@ -213,6 +230,10 @@ export default function App() {
     }
   }
 
+  function getRandom() {
+    return Math.floor(Math.random() * 100000);
+  }
+
   async function stopRecordingAndEnablePlayback() {
     setLoading(true);
     try {
@@ -221,7 +242,14 @@ export default function App() {
       const info = await FileSystem.getInfoAsync(recorder.getURI());
       const sounforSend = await MediaLibrary.createAssetAsync(info.uri);
       await sendFile(sounforSend, "sound");
-      await saveToAlbum(sounforSend);
+      console.log(info.uri);
+      const newRandomLink =
+        FileSystem.documentDirectory + getRandom() + "_file.m4a";
+      await FileSystem.moveAsync({
+        from: info.uri,
+        to: newRandomLink,
+      });
+      // await saveToAlbum(sounforSend);
       await loadPlaylist();
       setRecordingDuration(null);
       setPlaylistIndex(playlist.length);
@@ -238,7 +266,7 @@ export default function App() {
       });
       setIsPlaybackAllowed(true);
       const { sound, status } = await Audio.Sound.createAsync(
-        { uri: info.uri },
+        { uri: newRandomLink },
         {
           isLooping,
           isMuted: isMuted,
