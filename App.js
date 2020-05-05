@@ -5,6 +5,7 @@ import * as MediaLibrary from "expo-media-library";
 import { Audio } from "expo-av";
 import { Camera } from "expo-camera";
 import ErrorBoundary from "./ErrorBoundary";
+import { AsyncStorage } from "react-native";
 import {
   StyleSheet,
   Text,
@@ -52,6 +53,7 @@ export default function App() {
   const [fetching, setFetching] = useState(false);
   let camera = useRef(null);
   const opacityAnim = useRef(new Animated.Value(0)).current;
+  const recordsDir = FileSystem.documentDirectory + "records/";
   const opacity = opacityAnim.interpolate({
     inputRange: [0, 0.5, 1],
     outputRange: [0, 1, 0],
@@ -91,6 +93,14 @@ export default function App() {
 
   useEffect(() => {
     (async () => {
+      const assets = await retrieveData("playlist");
+      if (!assets) {
+        await storeData("playlist", []);
+      }
+      const recDirExist = await FileSystem.getInfoAsync(recordsDir);
+      if (!recDirExist.exists) {
+        await FileSystem.makeDirectoryAsync(recordsDir);
+      }
       await loadPlaylist();
     })();
   }, []);
@@ -107,6 +117,27 @@ export default function App() {
     setPlaylistIndex(playlistIndex);
   }, [playlistIndex]);
 
+  async function storeData(key, val) {
+    const value = JSON.stringify(val);
+    try {
+      await AsyncStorage.setItem(key, value);
+    } catch (error) {
+      console.log("Can`t write asyncMemory", error);
+    }
+  }
+
+  async function retrieveData(key) {
+    try {
+      const value = await AsyncStorage.getItem(key);
+      if (!value) {
+        return value;
+      }
+      return JSON.parse(value);
+    } catch (error) {
+      console.log("Can`t read asyncMemory", error);
+    }
+  }
+
   async function getAlbum() {
     const album = await MediaLibrary.getAlbumAsync("dictaphone");
     return album ? album : false;
@@ -122,26 +153,13 @@ export default function App() {
       //     mediaType: [MediaLibrary.MediaType.audio],
       //   });
 
-      const assetsQuery = await MediaLibrary.getAssetsAsync({
-        first: 50,
-        mediaType: [MediaLibrary.MediaType.audio],
-      });
-      const ww = await FileSystem.readDirectoryAsync(
-        FileSystem.documentDirectory
-      );
-      const assets = {
-        assets: [],
-      };
-      console.log("Document directory", FileSystem.documentDirectory, ww);
-      ww.map((item) =>
-        assets.assets.push({
-          name: item,
-          uri: FileSystem.documentDirectory + item,
-        })
-      );
+      // const assetsQuery = await MediaLibrary.getAssetsAsync({
+      //   first: 50,
+      //   mediaType: [MediaLibrary.MediaType.photo],   //photo
+      // });
 
-      console.log("Audio Assets from media library", assetsQuery);
-      setPlaylist(assets.assets);
+      const assets = await retrieveData("playlist");
+      setPlaylist(assets);
     } catch (error) {
       console.log("Cant load playlist", error);
     }
@@ -230,26 +248,30 @@ export default function App() {
     }
   }
 
-  function getRandom() {
-    return Math.floor(Math.random() * 100000);
-  }
-
   async function stopRecordingAndEnablePlayback() {
     setLoading(true);
     try {
       await recorder.stopAndUnloadAsync();
       setRecColor("black");
+      // const sounforSend = await MediaLibrary.createAssetAsync(info.uri);
+      const status = await recorder.getStatusAsync();
+      const re = /(?!.*\/).*[^"]/g;
       const info = await FileSystem.getInfoAsync(recorder.getURI());
-      const sounforSend = await MediaLibrary.createAssetAsync(info.uri);
-      await sendFile(sounforSend, "sound");
-      console.log(info.uri);
-      const newRandomLink =
-        FileSystem.documentDirectory + getRandom() + "_file.m4a";
+      const filename = info.uri.match(re)[0];
+      const fileLink = recordsDir + filename;
       await FileSystem.moveAsync({
         from: info.uri,
-        to: newRandomLink,
+        to: fileLink,
       });
-      // await saveToAlbum(sounforSend);
+      const newRecord = {
+        filename,
+        recordName: getRecordName(Date.now()),
+        duration: getDuration(status.durationMillis),
+        uri: fileLink,
+        serverStoring: true,
+      };
+      storeData("playlist", [...playlist, newRecord]);
+      await sendFile(newRecord, "sound");
       await loadPlaylist();
       setRecordingDuration(null);
       setPlaylistIndex(playlist.length);
@@ -265,8 +287,8 @@ export default function App() {
         staysActiveInBackground: true,
       });
       setIsPlaybackAllowed(true);
-      const { sound, status } = await Audio.Sound.createAsync(
-        { uri: newRandomLink },
+      const { sound } = await Audio.Sound.createAsync(
+        { uri: fileLink },
         {
           isLooping,
           isMuted: isMuted,
@@ -293,7 +315,10 @@ export default function App() {
         setIsPlaying(false);
         setIsPlaybackAllowed(false);
       }
-
+      if (!playlist[playbackItemIndex]) {
+        setLoading(false);
+        return;
+      }
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: false,
         interruptionModeIOS: Audio.INTERRUPTION_MODE_IOS_DO_NOT_MIX,
@@ -329,17 +354,20 @@ export default function App() {
   }
 
   async function deleteItem(id, item) {
-    const queryAlbum = await getAlbum();
     try {
-      if (id === playlistIndex) {
-        if (soundPlayer !== null) {
-          soundPlayer.stopAsync();
-          setShouldPlay(false);
-          playItem(playlistIndex - 1, true);
-        }
+      if (id === playlistIndex && soundPlayer !== null) {
+        soundPlayer.stopAsync();
+        setShouldPlay(false);
+        playItem(playlistIndex - 1, true);
+      } else if (playlist[playlistIndex - 1] && id < playlistIndex) {
+        setPlaylistIndex(playlistIndex - 1);
       }
-      await MediaLibrary.removeAssetsFromAlbumAsync([item], queryAlbum);
 
+      await FileSystem.deleteAsync(item.uri);
+      const playlistFilter = playlist.filter(
+        (rec) => rec.filename !== item.filename
+      );
+      storeData("playlist", playlistFilter);
       await loadPlaylist();
     } catch (error) {
       console.log("Cant remove record:" + error);
@@ -462,7 +490,6 @@ export default function App() {
   function getRecordName(epoch) {
     const date = new Date(epoch),
       rowName = `Rec_${date.toLocaleDateString()}-${date.toLocaleTimeString()}`,
-      // name = rowName.replace(/ |,|\.|\/|:/gi, "_");
       name = rowName.replace(/\//gi, ".");
     return name;
   }
@@ -529,6 +556,35 @@ export default function App() {
       console.log("upload error", error);
     }
     setFetching(false);
+  }
+
+  function PlayList({ list, onPlay, onDelete }) {
+    return list.map((item, index) => {
+      return (
+        <TouchableOpacity
+          key={index}
+          style={[
+            styles.playlistItem,
+            {
+              borderColor: index === playlistIndex ? "gray" : "black",
+              backgroundColor: index === playlistIndex ? "lightgray" : "white",
+            },
+          ]}
+          onPress={() => onPlay(index)}
+        >
+          <Text>{item.recordName}</Text>
+          <View style={styles.playlistItemTimeAndDelete}>
+            <Text>{item.duration}</Text>
+            <MaterialCommunityIcons
+              name="delete-forever"
+              onPress={() => onDelete(index, item)}
+              size={ICON_SIZE - 15}
+              color="black"
+            />
+          </View>
+        </TouchableOpacity>
+      );
+    });
   }
 
   return (
@@ -649,33 +705,11 @@ export default function App() {
 
             <ScrollView style={styles.playlist}>
               <Text style={styles.playlisttitle}>Record list</Text>
-              {playlist.map((item, index) => {
-                return (
-                  <TouchableOpacity
-                    key={index}
-                    style={[
-                      styles.playlistItem,
-                      {
-                        borderColor: index === playlistIndex ? "gray" : "black",
-                        backgroundColor:
-                          index === playlistIndex ? "lightgray" : "white",
-                      },
-                    ]}
-                    onPress={() => playItem(index)}
-                  >
-                    <Text>{getRecordName(item.modificationTime)}</Text>
-                    <View style={styles.playlistItemTimeAndDelete}>
-                      <Text>{getDuration(item.duration * 1000)}</Text>
-                      <MaterialCommunityIcons
-                        name="delete-forever"
-                        onPress={() => deleteItem(index, item)}
-                        size={ICON_SIZE - 15}
-                        color="black"
-                      />
-                    </View>
-                  </TouchableOpacity>
-                );
-              })}
+              <PlayList
+                list={playlist}
+                onPlay={playItem}
+                onDelete={deleteItem}
+              />
             </ScrollView>
             <View style={styles.recordContainer}>
               <TouchableOpacity
@@ -722,17 +756,11 @@ export default function App() {
                     color="black"
                     style={{
                       opacity:
-                        !isPlaybackAllowed ||
-                        loading ||
-                        !playlist[playlistIndex - 1]
+                        !isPlaybackAllowed || loading || !playlist.length
                           ? DISABLED_OPACITY
                           : 1,
                     }}
-                    disabled={
-                      !isPlaybackAllowed ||
-                      loading ||
-                      !playlist[playlistIndex - 1]
-                    }
+                    disabled={!isPlaybackAllowed || loading || !playlist.length}
                   />
 
                   {!isPlaying ? (
