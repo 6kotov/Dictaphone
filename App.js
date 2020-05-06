@@ -287,10 +287,10 @@ export default function App() {
         recordName: getRecordName(Date.now()),
         duration: getDuration(status.durationMillis),
         uri: fileLink,
-        serverStoring: false,
+        serverStoring: true,
       };
 
-      newRecord.serverStoring = await sendFile(newRecord, "sound");
+      await sendFile(newRecord, "sound");
       storeData("playlist", [...playlist, newRecord]);
       await loadPlaylist();
       setRecordingDuration(null);
@@ -891,7 +891,7 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderRadius: 3,
     borderColor: "black",
-    backgroundColor: "darkgray",
+    backgroundColor: "#33a2da",
     textAlign: "center",
     fontSize: 20,
     fontWeight: "300",

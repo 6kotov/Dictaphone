@@ -19,7 +19,7 @@ function PlayList({ list, onPlay, onDelete, styles, playlistIndex }) {
                 {
                   borderColor: index === playlistIndex ? "gray" : "black",
                   backgroundColor:
-                    index === playlistIndex ? "lightgray" : "white",
+                    index === playlistIndex ? "#33a2db" : "white",
                 },
               ]}
               onPress={() => onPlay(index)}
@@ -29,7 +29,7 @@ function PlayList({ list, onPlay, onDelete, styles, playlistIndex }) {
                 <MaterialCommunityIcons
                   name="cloud-check"
                   size={ICON_SIZE - 15}
-                  color="gray"
+                  color="lightgray"
                   style={{
                     opacity: item.serverStoring ? 1 : 0,
                   }}
