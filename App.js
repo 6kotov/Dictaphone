@@ -13,12 +13,13 @@ import {
   Dimensions,
   TouchableOpacity,
   Slider,
-  ScrollView,
   ImageBackground,
   Animated,
   Easing,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import PlayList from "./src/Playlist";
+import Recorder from "./src/Recorder";
 const { width: DEVICE_WIDTH, height: DEVICE_HEIGHT } = Dimensions.get("window");
 const DISABLED_OPACITY = 0.5;
 const ICON_SIZE = 40;
@@ -159,9 +160,28 @@ export default function App() {
       // });
 
       const assets = await retrieveData("playlist");
-      setPlaylist(assets);
+      const syncList = await syncFiles(assets);
+      setPlaylist(syncList);
     } catch (error) {
       console.log("Cant load playlist", error);
+    }
+  }
+
+  async function syncFiles(fileList) {
+    const filesUrl = "http://dictaphone.worddict.net/soundlist/";
+    try {
+      const re = /.*loaded_/gi;
+      const response = await fetch(filesUrl);
+      const fileonServer = await response.json();
+      const serverSoundList = fileonServer.soundList.map((item) =>
+        item.replace(re, "")
+      );
+      fileList.map(
+        (item) => (item.serverStoring = serverSoundList.includes(item.filename))
+      );
+      return fileList;
+    } catch (error) {
+      console.log("upload error", error);
     }
   }
 
@@ -253,10 +273,9 @@ export default function App() {
     try {
       await recorder.stopAndUnloadAsync();
       setRecColor("black");
-      // const sounforSend = await MediaLibrary.createAssetAsync(info.uri);
       const status = await recorder.getStatusAsync();
-      const re = /(?!.*\/).*[^"]/g;
       const info = await FileSystem.getInfoAsync(recorder.getURI());
+      const re = /(?!.*\/).*[^"]/g;
       const filename = info.uri.match(re)[0];
       const fileLink = recordsDir + filename;
       await FileSystem.moveAsync({
@@ -268,10 +287,11 @@ export default function App() {
         recordName: getRecordName(Date.now()),
         duration: getDuration(status.durationMillis),
         uri: fileLink,
-        serverStoring: true,
+        serverStoring: false,
       };
+
+      newRecord.serverStoring = await sendFile(newRecord, "sound");
       storeData("playlist", [...playlist, newRecord]);
-      await sendFile(newRecord, "sound");
       await loadPlaylist();
       setRecordingDuration(null);
       setPlaylistIndex(playlist.length);
@@ -286,6 +306,7 @@ export default function App() {
         playThroughEarpieceAndroid: false,
         staysActiveInBackground: true,
       });
+
       setIsPlaybackAllowed(true);
       const { sound } = await Audio.Sound.createAsync(
         { uri: fileLink },
@@ -558,35 +579,6 @@ export default function App() {
     setFetching(false);
   }
 
-  function PlayList({ list, onPlay, onDelete }) {
-    return list.map((item, index) => {
-      return (
-        <TouchableOpacity
-          key={index}
-          style={[
-            styles.playlistItem,
-            {
-              borderColor: index === playlistIndex ? "gray" : "black",
-              backgroundColor: index === playlistIndex ? "lightgray" : "white",
-            },
-          ]}
-          onPress={() => onPlay(index)}
-        >
-          <Text>{item.recordName}</Text>
-          <View style={styles.playlistItemTimeAndDelete}>
-            <Text>{item.duration}</Text>
-            <MaterialCommunityIcons
-              name="delete-forever"
-              onPress={() => onDelete(index, item)}
-              size={ICON_SIZE - 15}
-              color="black"
-            />
-          </View>
-        </TouchableOpacity>
-      );
-    });
-  }
-
   return (
     <>
       <ErrorBoundary>
@@ -702,35 +694,21 @@ export default function App() {
                 )}
               </View>
             </View>
-
-            <ScrollView style={styles.playlist}>
-              <Text style={styles.playlisttitle}>Record list</Text>
-              <PlayList
-                list={playlist}
-                onPlay={playItem}
-                onDelete={deleteItem}
-              />
-            </ScrollView>
-            <View style={styles.recordContainer}>
-              <TouchableOpacity
-                onPress={onRecordPressed}
-                activeOpacity={DISABLED_OPACITY}
-              >
-                <MaterialCommunityIcons
-                  name="record-rec"
-                  size={ICON_SIZE + 10}
-                  color={recColor}
-                />
-              </TouchableOpacity>
-              <View style={styles.RecordTimeStamp}>
-                <Text style={styles.liveRecord}>
-                  {isRecording ? "LIVE " : " "}
-                </Text>
-                <Text style={styles.recordTime}>
-                  {getDuration(recordingDuration)}
-                </Text>
-              </View>
-            </View>
+            <PlayList
+              list={playlist}
+              onPlay={playItem}
+              onDelete={deleteItem}
+              styles={styles}
+              playlistIndex={playlistIndex}
+            />
+            <Recorder
+              onRecordPressed={onRecordPressed}
+              styles={styles}
+              getDuration={getDuration}
+              recordingDuration={recordingDuration}
+              isRecording={isRecording}
+              recColor={recColor}
+            />
             <View style={[styles.playBackContainer]}>
               <Slider
                 style={styles.playbackSlider}
@@ -745,6 +723,9 @@ export default function App() {
                   { opacity: !isPlaybackAllowed ? DISABLED_OPACITY : 1.0 },
                 ]}
               >
+                <Text style={styles.playTime}>
+                  {getDuration(soundPosition)}/{getDuration(soundDuration)}
+                </Text>
                 <TouchableOpacity
                   activeOpacity={DISABLED_OPACITY}
                   style={styles.PlayStopPause}
@@ -808,41 +789,35 @@ export default function App() {
                     }
                   />
                 </TouchableOpacity>
-                <Text style={styles.playTime}>
-                  {getDuration(soundPosition)}/{getDuration(soundDuration)}
-                </Text>
               </View>
 
-              <View style={styles.volumeContainer}>
+              <View style={styles.bottomPanel}>
                 <MaterialCommunityIcons
-                  style={{
-                    marginHorizontal: 4,
-                    right: 4,
-                  }}
                   name="camera"
                   onPress={() => setShowCamera(true)}
                   size={ICON_SIZE}
                   color="black"
                   disabled={loading}
                 />
-
-                <MaterialCommunityIcons
-                  name={isMuted ? "volume-off" : "volume-high"}
-                  size={ICON_SIZE}
-                  style={{
-                    opacity: !isPlaybackAllowed ? DISABLED_OPACITY : 1.0,
-                  }}
-                  color="black"
-                  onPress={OnMutePressed}
-                  disabled={!isPlaybackAllowed || loading}
-                />
-
-                <Slider
-                  style={styles.volumeSlider}
-                  value={1.0}
-                  onValueChange={onVolumeChange}
-                  disabled={!isPlaybackAllowed || loading}
-                />
+                <View style={styles.volumeContainer}>
+                  <MaterialCommunityIcons
+                    name={isMuted ? "volume-off" : "volume-high"}
+                    size={ICON_SIZE}
+                    style={{
+                      opacity: !isPlaybackAllowed ? DISABLED_OPACITY : 1.0,
+                      left: 10,
+                    }}
+                    color="black"
+                    onPress={OnMutePressed}
+                    disabled={!isPlaybackAllowed || loading}
+                  />
+                  <Slider
+                    style={styles.volumeSlider}
+                    value={1.0}
+                    onValueChange={onVolumeChange}
+                    disabled={!isPlaybackAllowed || loading}
+                  />
+                </View>
 
                 <MaterialCommunityIcons
                   name="loop"
@@ -853,6 +828,14 @@ export default function App() {
                   style={{
                     opacity: !isLooping ? DISABLED_OPACITY : 1,
                   }}
+                />
+
+                <MaterialCommunityIcons
+                  name="settings"
+                  size={ICON_SIZE}
+                  color="black"
+                  // onPress={onLoopPressed}
+                  disabled={loading}
                 />
               </View>
             </View>
@@ -868,9 +851,9 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#fff",
     alignItems: "center",
-    justifyContent: "space-around",
-    marginHorizontal: 15,
-    marginVertical: 30,
+    justifyContent: "flex-start",
+    marginTop: 30,
+    marginBottom: 15,
   },
   title: {
     alignSelf: "center",
@@ -880,17 +863,21 @@ const styles = StyleSheet.create({
   },
   playlist: {
     height: DEVICE_HEIGHT / 2,
-    width: DEVICE_WIDTH - 20,
-    borderColor: "gray",
+    width: DEVICE_WIDTH,
+    borderTopColor: "gray",
     borderStyle: "solid",
-    borderWidth: 2,
+    borderTopWidth: 2,
     borderRadius: 3,
+    borderBottomColor: "gray",
+    borderBottomWidth: 2,
+    marginTop: 5,
+    backgroundColor: "lightgray",
   },
   playlistItem: {
     flexDirection: "row",
     justifyContent: "space-between",
     padding: 5,
-    marginVertical: 3,
+    marginVertical: 2,
     marginHorizontal: 5,
     borderColor: "gray",
     borderStyle: "solid",
@@ -916,43 +903,61 @@ const styles = StyleSheet.create({
   },
   liveRecord: {
     color: "red",
-    fontSize: 15,
+    fontSize: 18,
+    marginRight: 2,
   },
   recordTime: {
-    fontSize: 15,
+    fontSize: 18,
   },
   recordContainer: {
-    width: DEVICE_WIDTH / 1.3,
+    width: DEVICE_WIDTH / 2,
     flexDirection: "row",
     justifyContent: "space-between",
+    alignSelf: "flex-start",
+    marginHorizontal: 15,
+    marginVertical: 5,
   },
   playbackSlider: {
-    marginBottom: 20,
+    width: DEVICE_WIDTH / 1.1,
+    alignSelf: "center",
   },
   PlayStopPause: {
     flexDirection: "row",
-    marginBottom: 15,
+    width: DEVICE_WIDTH / 1.3,
+    marginVertical: 10,
+    justifyContent: "space-between",
+    alignSelf: "center",
   },
   player: {
-    flexDirection: "row",
+    flexDirection: "column",
     justifyContent: "space-between",
+    width: DEVICE_WIDTH,
+    alignSelf: "center",
   },
   playBackContainer: {
     width: DEVICE_WIDTH / 1.2,
   },
   playTime: {
     fontSize: 15,
-    alignSelf: "flex-start",
+    alignSelf: "flex-end",
+    marginRight: 25,
   },
   volumeContainer: {
     flexDirection: "row",
+    justifyContent: "center",
+  },
+  bottomPanel: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    width: DEVICE_WIDTH - 25,
+    alignSelf: "center",
   },
   volumeSlider: {
-    width: DEVICE_WIDTH / 2.2,
+    width: DEVICE_WIDTH / 2.5,
   },
   playlistItemTimeAndDelete: {
     flexDirection: "row",
-    width: 70,
+    width: 105,
     justifyContent: "space-between",
   },
   imagePreview: {
