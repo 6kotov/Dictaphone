@@ -36,7 +36,7 @@ function PlayList({ list, onPlay, onDelete, styles, playlistIndex }) {
                 />
                 <Text>{item.duration}</Text>
                 <MaterialCommunityIcons
-                  name="delete-forever"
+                  name="delete-circle"
                   onPress={() => onDelete(index, item)}
                   size={ICON_SIZE - 15}
                   color="black"

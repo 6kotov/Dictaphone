@@ -20,6 +20,9 @@ import {
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import PlayList from "./src/Playlist";
 import Recorder from "./src/Recorder";
+import SettingsList from "./src/SettingsList";
+import Gallery from "./src/Gallery";
+
 const { width: DEVICE_WIDTH, height: DEVICE_HEIGHT } = Dimensions.get("window");
 const DISABLED_OPACITY = 0.5;
 const ICON_SIZE = 40;
@@ -49,9 +52,20 @@ export default function App() {
   const [recorder, setRecorder] = useState(null);
   const [soundPlayer, setSoundPlayer] = useState(null);
   const [playlist, setPlaylist] = useState([]);
+  const [imagelist, setImagelist] = useState([]);
   const [playlistIndex, setPlaylistIndex] = useState(null);
   const [prewiewImage, setPrewiewImage] = useState(null);
   const [fetching, setFetching] = useState(false);
+  const [recognize, setRecognize] = useState("OFF");
+  const [settings, setSettings] = useState({
+    setting1: true,
+    setting2: false,
+    setting3: true,
+    setting4: false,
+  });
+  const [showSettings, setShowSettings] = useState(false);
+  const [showGallery, setShowGallery] = useState(false);
+
   let camera = useRef(null);
   const opacityAnim = useRef(new Animated.Value(0)).current;
   const recordsDir = FileSystem.documentDirectory + "records/";
@@ -103,6 +117,7 @@ export default function App() {
         await FileSystem.makeDirectoryAsync(recordsDir);
       }
       await loadPlaylist();
+      await loadimagelist();
     })();
   }, []);
 
@@ -144,44 +159,60 @@ export default function App() {
     return album ? album : false;
   }
 
+  async function loadimagelist() {
+    const queryAlbum = await getAlbum();
+    if (!queryAlbum) {
+      return;
+    }
+    const assets = await MediaLibrary.getAssetsAsync({
+      album: queryAlbum,
+      first: 200,
+      mediaType: [MediaLibrary.MediaType.photo],
+    });
+    assets.assets.map((item) => {
+      item.serverStoring = false;
+    });
+    const syncList = await syncFiles(assets.assets, "imageList");
+    setImagelist(syncList);
+  }
+
   async function loadPlaylist() {
     try {
-      // const queryAlbum = await getAlbum();
-      // if (queryAlbum) {
-      //   const assets = await MediaLibrary.getAssetsAsync({
-      //     album: queryAlbum,
-      //     first: 50,
-      //     mediaType: [MediaLibrary.MediaType.audio],
-      //   });
-
-      // const assetsQuery = await MediaLibrary.getAssetsAsync({
-      //   first: 50,
-      //   mediaType: [MediaLibrary.MediaType.photo],   //photo
-      // });
-
       const assets = await retrieveData("playlist");
-      const syncList = await syncFiles(assets);
+      const syncList = await syncFiles(assets, "soundList");
       setPlaylist(syncList);
     } catch (error) {
       console.log("Cant load playlist", error);
     }
   }
 
-  async function syncFiles(fileList) {
-    const filesUrl = "http://dictaphone.worddict.net/soundlist/";
+  async function syncFiles(fileList, syncType) {
+    const filesUrl = "http://dictaphone.worddict.net/fileslist/";
     try {
       const re = /.*loaded_/gi;
       const response = await fetch(filesUrl);
       const fileonServer = await response.json();
-      const serverSoundList = fileonServer.soundList.map((item) =>
-        item.replace(re, "")
-      );
-      fileList.map(
-        (item) => (item.serverStoring = serverSoundList.includes(item.filename))
-      );
-      return fileList;
+      if (syncType === "soundList") {
+        const serverSoundList = fileonServer.soundList.map((item) =>
+          item.replace(re, "")
+        );
+        fileList.map(
+          (item) =>
+            (item.serverStoring = serverSoundList.includes(item.filename))
+        );
+        return fileList;
+      } else if (syncType === "imageList") {
+        const serverImageList = fileonServer.ImageList.map((item) =>
+          item.replace(re, "")
+        );
+        fileList.map(
+          (item) =>
+            (item.serverStoring = serverImageList.includes(item.filename))
+        );
+        return fileList;
+      }
     } catch (error) {
-      console.log("upload error", error);
+      console.log("Sync error", error);
     }
   }
 
@@ -287,7 +318,7 @@ export default function App() {
         recordName: getRecordName(Date.now()),
         duration: getDuration(status.durationMillis),
         uri: fileLink,
-        serverStoring: true,
+        serverStoring: false,
       };
 
       await sendFile(newRecord, "sound");
@@ -374,7 +405,7 @@ export default function App() {
     }
   }
 
-  async function deleteItem(id, item) {
+  async function deleteSound(id, item) {
     try {
       if (id === playlistIndex && soundPlayer !== null) {
         soundPlayer.stopAsync();
@@ -383,16 +414,21 @@ export default function App() {
       } else if (playlist[playlistIndex - 1] && id < playlistIndex) {
         setPlaylistIndex(playlistIndex - 1);
       }
-
-      await FileSystem.deleteAsync(item.uri);
       const playlistFilter = playlist.filter(
         (rec) => rec.filename !== item.filename
       );
-      storeData("playlist", playlistFilter);
+      await storeData("playlist", playlistFilter);
       await loadPlaylist();
+      await FileSystem.deleteAsync(item.uri);
     } catch (error) {
       console.log("Cant remove record:" + error);
     }
+  }
+
+  async function deleteImage(asset) {
+    const album = await getAlbum();
+    await MediaLibrary.removeAssetsFromAlbumAsync([asset], album);
+    await loadimagelist();
   }
 
   function onRecordPressed() {
@@ -528,6 +564,7 @@ export default function App() {
       await sendFile(photo, "image");
       await saveToAlbum(photo);
       setPrewiewImage(null);
+      await loadimagelist();
     } catch (error) {
       console.log("Error? cant save photo", error);
     }
@@ -565,7 +602,9 @@ export default function App() {
           ? "http://dictaphone.worddict.net/api/upload/image/"
           : "http://dictaphone.worddict.net/api/upload/sound/",
       fileType = type === "image" ? "image/jpeg" : "audio/mp4",
-      fieldname = type === "image" ? "photo" : "sound";
+      fieldname = type === "image" ? "photo" : "sound",
+      syncType = type === "image" ? "imageList" : "soundList",
+      fileList = type === "image" ? imagelist : playlist;
 
     setFetching(true);
     try {
@@ -573,6 +612,7 @@ export default function App() {
         method: "POST",
         body: createFormData(file, {}, fileType, fieldname),
       });
+      await syncFiles(fileList, syncType);
     } catch (error) {
       console.log("upload error", error);
     }
@@ -609,7 +649,7 @@ export default function App() {
                     disabled={loading}
                   />
                 </ImageBackground>
-              ) : (
+              ) : !showGallery ? (
                 <Camera
                   ref={camera}
                   style={{
@@ -648,6 +688,15 @@ export default function App() {
                       disabled={loading}
                     />
                     <MaterialCommunityIcons
+                      name="image-area"
+                      onPress={() => setShowGallery(true)}
+                      style={styles.previewControlButton}
+                      size={ICON_SIZE}
+                      color="white"
+                      disabled={loading}
+                    />
+
+                    <MaterialCommunityIcons
                       name="camera-switch"
                       onPress={() => {
                         setCameraType(
@@ -663,11 +712,25 @@ export default function App() {
                     />
                   </View>
                 </Camera>
+              ) : (
+                <Gallery
+                  list={imagelist}
+                  onDelete={deleteImage}
+                  styles={styles}
+                  setShowGallery={setShowGallery}
+                />
               )
             ) : (
-              <Text style={styles.NoAcccessCamera}>No access to camera</Text>
+              <Text style={styles.noAcccessCamera}>No access to camera</Text>
             )}
           </View>
+        ) : showSettings ? (
+          <SettingsList
+            styles={styles}
+            settings={settings}
+            setShowSettings={setShowSettings}
+            setSettings={setSettings}
+          />
         ) : (
           <View style={styles.playerContainer}>
             <View
@@ -697,7 +760,7 @@ export default function App() {
             <PlayList
               list={playlist}
               onPlay={playItem}
-              onDelete={deleteItem}
+              onDelete={deleteSound}
               styles={styles}
               playlistIndex={playlistIndex}
             />
@@ -708,6 +771,8 @@ export default function App() {
               recordingDuration={recordingDuration}
               isRecording={isRecording}
               recColor={recColor}
+              recognize={recognize}
+              setRecognize={setRecognize}
             />
             <View style={[styles.playBackContainer]}>
               <Slider
@@ -834,7 +899,7 @@ export default function App() {
                   name="settings"
                   size={ICON_SIZE}
                   color="black"
-                  // onPress={onLoopPressed}
+                  onPress={() => setShowSettings(true)}
                   disabled={loading}
                 />
               </View>
@@ -910,7 +975,7 @@ const styles = StyleSheet.create({
     fontSize: 18,
   },
   recordContainer: {
-    width: DEVICE_WIDTH / 2,
+    width: DEVICE_WIDTH / 1.1,
     flexDirection: "row",
     justifyContent: "space-between",
     alignSelf: "flex-start",
@@ -982,5 +1047,81 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
   },
-  NoAcccessCamera: { margin: 20 },
+  noAcccessCamera: { margin: 20 },
+  recognizeToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  settings: {
+    width: DEVICE_WIDTH,
+    flexDirection: "column",
+    alignItems: "flex-start",
+    marginTop: 35,
+  },
+  settingsList: {
+    marginTop: 15,
+    width: DEVICE_WIDTH,
+    flexDirection: "column",
+    alignItems: "center",
+    borderBottomWidth: 1,
+    borderColor: "black",
+    borderStyle: "solid",
+  },
+  settingsItem: {
+    borderTopWidth: 1,
+    borderColor: "black",
+    borderStyle: "solid",
+    width: DEVICE_WIDTH,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingVertical: 15,
+    paddingHorizontal: 15,
+  },
+  backButton: {
+    marginLeft: 15,
+  },
+  imagePrewiewList: {
+    height: 150,
+    width: 100,
+  },
+  galleryItem: {
+    borderTopWidth: 1,
+    borderColor: "black",
+    borderStyle: "solid",
+    width: DEVICE_WIDTH,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 15,
+    paddingLeft: 15,
+    paddingRight: 10,
+  },
+  gallery: {
+    width: DEVICE_WIDTH,
+    height: DEVICE_HEIGHT - 25,
+    flexDirection: "column",
+    alignItems: "flex-start",
+    marginTop: 35,
+  },
+  galleryTitle: {
+    width: DEVICE_WIDTH - 10,
+    marginVertical: 5,
+    marginHorizontal: 5,
+    borderStyle: "solid",
+    borderWidth: 2,
+    borderRadius: 3,
+    borderColor: "black",
+    backgroundColor: "#33a2da",
+    textAlign: "center",
+    fontSize: 20,
+    fontWeight: "300",
+  },
+  imageName: {
+    width: 150,
+  },
+  galleryCloudAndDelete: {
+    flexDirection: "column",
+    width: 50,
+    justifyContent: "space-between",
+  },
 });
