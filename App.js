@@ -16,12 +16,14 @@ import {
   ImageBackground,
   Animated,
   Easing,
+  BackHandler,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import PlayList from "./src/Playlist";
 import Recorder from "./src/Recorder";
 import SettingsList from "./src/SettingsList";
 import Gallery from "./src/Gallery";
+import NetInfo from "@react-native-community/netinfo";
 
 const { width: DEVICE_WIDTH, height: DEVICE_HEIGHT } = Dimensions.get("window");
 const DISABLED_OPACITY = 0.5;
@@ -58,8 +60,8 @@ export default function App() {
   const [fetching, setFetching] = useState(false);
   const [recognize, setRecognize] = useState("OFF");
   const [settings, setSettings] = useState({
-    setting1: true,
-    setting2: false,
+    instatntLoading: false,
+    recordQuality: "high",
     setting3: true,
     setting4: false,
   });
@@ -116,6 +118,7 @@ export default function App() {
       if (!recDirExist.exists) {
         await FileSystem.makeDirectoryAsync(recordsDir);
       }
+
       await loadPlaylist();
       await loadimagelist();
     })();
@@ -133,6 +136,23 @@ export default function App() {
     setPlaylistIndex(playlistIndex);
   }, [playlistIndex]);
 
+  useEffect(() => {
+    const backHandler = BackHandler.addEventListener(
+      "hardwareBackPress",
+      goBack
+    );
+
+    return () => backHandler.remove();
+  }, []);
+
+  function goBack() {
+    if (camera.current) {
+      setShowCamera(false);
+      return true;
+    }
+    return false;
+  }
+
   async function storeData(key, val) {
     const value = JSON.stringify(val);
     try {
@@ -140,6 +160,11 @@ export default function App() {
     } catch (error) {
       console.log("Can`t write asyncMemory", error);
     }
+  }
+
+  async function getConnection() {
+    const state = await NetInfo.fetch();
+    return state.isInternetReachable;
   }
 
   async function retrieveData(key) {
@@ -172,15 +197,24 @@ export default function App() {
     assets.assets.map((item) => {
       item.serverStoring = false;
     });
-    const syncList = await syncFiles(assets.assets, "imageList");
-    setImagelist(syncList);
+
+    if (await getConnection()) {
+      const syncList = await syncFiles(assets.assets, "imageList");
+      setImagelist(syncList);
+      return;
+    }
+    setImagelist(assets.assets);
   }
 
   async function loadPlaylist() {
     try {
       const assets = await retrieveData("playlist");
-      const syncList = await syncFiles(assets, "soundList");
-      setPlaylist(syncList);
+      if (await getConnection()) {
+        const syncList = await syncFiles(assets, "soundList");
+        setPlaylist(syncList);
+        return;
+      }
+      setPlaylist(assets);
     } catch (error) {
       console.log("Cant load playlist", error);
     }
@@ -285,7 +319,9 @@ export default function App() {
 
       const recording = new Audio.Recording();
       await recording.prepareToRecordAsync(
-        Audio.RECORDING_OPTIONS_PRESET_HIGH_QUALITY
+        settings.recordQuality === "high"
+          ? Audio.RECORDING_OPTIONS_PRESET_HIGH_QUALITY
+          : Audio.RECORDING_OPTIONS_PRESET_LOW_QUALITY
       );
 
       recording.setOnRecordingStatusUpdate(updateScreenForRecordStatus);
@@ -321,7 +357,10 @@ export default function App() {
         serverStoring: false,
       };
 
-      await sendFile(newRecord, "sound");
+      if (settings.instatntLoading && (await getConnection())) {
+        await sendFile(newRecord, "sound");
+      }
+
       storeData("playlist", [...playlist, newRecord]);
       await loadPlaylist();
       setRecordingDuration(null);
@@ -561,7 +600,9 @@ export default function App() {
   async function savePhoto(uri) {
     try {
       let photo = await MediaLibrary.createAssetAsync(uri);
-      await sendFile(photo, "image");
+      if (settings.instatntLoading && (await getConnection())) {
+        await sendFile(photo, "image");
+      }
       await saveToAlbum(photo);
       setPrewiewImage(null);
       await loadimagelist();
@@ -595,6 +636,16 @@ export default function App() {
 
     return data;
   };
+  async function sendList(list, type) {
+    if (!getConnection()) {
+      return;
+    }
+    list.map(async (item) => {
+      if (!item.serverStoring && getConnection()) {
+        await sendFile(item, type);
+      }
+    });
+  }
 
   async function sendFile(file, type) {
     const url =
@@ -673,7 +724,7 @@ export default function App() {
                     <MaterialCommunityIcons
                       style={styles.previewControlButton}
                       name="microphone"
-                      onPress={() => setShowCamera(false)}
+                      onPress={goBack}
                       size={ICON_SIZE}
                       color="white"
                       disabled={loading}
@@ -714,6 +765,8 @@ export default function App() {
                 </Camera>
               ) : (
                 <Gallery
+                  sendList={sendList}
+                  sendFile={sendFile}
                   list={imagelist}
                   onDelete={deleteImage}
                   styles={styles}
@@ -758,6 +811,8 @@ export default function App() {
               </View>
             </View>
             <PlayList
+              sendList={sendList}
+              sendFile={sendFile}
               list={playlist}
               onPlay={playItem}
               onDelete={deleteSound}
@@ -1123,5 +1178,8 @@ const styles = StyleSheet.create({
     flexDirection: "column",
     width: 50,
     justifyContent: "space-between",
+  },
+  settingsSwich: {
+    flexDirection: "row",
   },
 });

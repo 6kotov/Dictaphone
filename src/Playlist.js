@@ -5,10 +5,26 @@ import { Text, View, TouchableOpacity, ScrollView } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 const ICON_SIZE = 40;
 
-function PlayList({ list, onPlay, onDelete, styles, playlistIndex }) {
+function PlayList({
+  list,
+  onPlay,
+  onDelete,
+  styles,
+  playlistIndex,
+  sendFile,
+  sendList,
+}) {
   return (
     <View style={styles.playlist}>
-      <Text style={styles.playlisttitle}>Record list</Text>
+      <Text style={styles.playlisttitle}>
+        Record list{"  "}
+        <MaterialCommunityIcons
+          name="sync"
+          size={ICON_SIZE - 20}
+          color="black"
+          onPress={() => sendList(list, "sound")}
+        />
+      </Text>
       <ScrollView>
         {list.map((item, index) => {
           return (
@@ -27,12 +43,12 @@ function PlayList({ list, onPlay, onDelete, styles, playlistIndex }) {
               <Text>{item.recordName}</Text>
               <View style={styles.playlistItemTimeAndDelete}>
                 <MaterialCommunityIcons
-                  name="cloud-check"
+                  name={item.serverStoring ? "cloud-check" : "cloud-sync"}
                   size={ICON_SIZE - 15}
-                  color="lightgray"
-                  style={{
-                    opacity: item.serverStoring ? 1 : 0,
-                  }}
+                  color="grey"
+                  onPress={
+                    item.serverStoring ? null : () => sendFile(item, "sound")
+                  }
                 />
                 <Text>{item.duration}</Text>
                 <MaterialCommunityIcons
@@ -54,6 +70,7 @@ PlayList.propTypes = {
   onDelete: PropTypes.func.isRequired,
   onPlay: PropTypes.func.isRequired,
   playlistIndex: PropTypes.number,
+  sendFile: PropTypes.func.isRequired,
 };
 
 export default PlayList;

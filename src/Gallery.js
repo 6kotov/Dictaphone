@@ -1,17 +1,52 @@
-import React from "react";
+import React, { useEffect } from "react";
 import PropTypes from "prop-types";
 
-import { Text, View, Image, ScrollView, Button } from "react-native";
+import {
+  Text,
+  View,
+  Image,
+  ScrollView,
+  Button,
+  BackHandler,
+} from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 const ICON_SIZE = 40;
 
-function Gallery({ list, onDelete, styles, setShowGallery }) {
+function Gallery({
+  list,
+  onDelete,
+  styles,
+  setShowGallery,
+  sendFile,
+  sendList,
+}) {
+  function goBack() {
+    setShowGallery(false);
+    return true;
+  }
+  useEffect(() => {
+    const backHandler = BackHandler.addEventListener(
+      "hardwareBackPress",
+      goBack
+    );
+
+    return () => backHandler.remove();
+  }, []);
   return (
     <View style={styles.gallery}>
       <View style={styles.backButton}>
-        <Button onPress={() => setShowGallery(false)} title="Back" />
+        <Button onPress={goBack} title="< Back" />
       </View>
-      <Text style={styles.galleryTitle}> Gallery </Text>
+      <Text style={styles.galleryTitle}>
+        {" "}
+        Gallery{"  "}
+        <MaterialCommunityIcons
+          name="sync"
+          size={ICON_SIZE - 20}
+          color="black"
+          onPress={() => sendList(list, "image")}
+        />
+      </Text>
       <ScrollView>
         {list.map((item, index) => {
           return (
@@ -20,13 +55,15 @@ function Gallery({ list, onDelete, styles, setShowGallery }) {
                 {item.filename}
               </Text>
               <View style={styles.galleryCloudAndDelete}>
-                {item.serverStoring && (
-                  <MaterialCommunityIcons
-                    name="cloud-check"
-                    size={ICON_SIZE - 5}
-                    color="lightgray"
-                  />
-                )}
+                <MaterialCommunityIcons
+                  name={item.serverStoring ? "cloud-check" : "cloud-sync"}
+                  size={ICON_SIZE - 5}
+                  color="grey"
+                  onPress={
+                    item.serverStoring ? null : () => sendFile(item, "image")
+                  }
+                />
+
                 <MaterialCommunityIcons
                   name="delete-circle"
                   onPress={() => onDelete(item)}
@@ -51,6 +88,7 @@ Gallery.propTypes = {
   list: PropTypes.arrayOf(PropTypes.object).isRequired,
   onDelete: PropTypes.func.isRequired,
   setShowGallery: PropTypes.func.isRequired,
+  sendFile: PropTypes.func.isRequired,
 };
 
 export default Gallery;
