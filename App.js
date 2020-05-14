@@ -426,6 +426,9 @@ export default function App() {
   }
 
   async function playItem(playbackItemIndex, onDelete = false) {
+    if (!isPlaybackAllowed) {
+      return;
+    }
     try {
       setLoading(true);
       if (soundPlayer !== null) {
