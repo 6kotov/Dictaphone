@@ -28,6 +28,7 @@ import NetInfo from "@react-native-community/netinfo";
 const { width: DEVICE_WIDTH, height: DEVICE_HEIGHT } = Dimensions.get("window");
 const DISABLED_OPACITY = 0.5;
 const ICON_SIZE = 40;
+const recognizeServer = "http://192.168.0.10:4004/recordings";
 
 export default function App() {
   const [recordPremission, setRecordPremission] = useState(false);
@@ -62,7 +63,7 @@ export default function App() {
   const [settings, setSettings] = useState({
     instatntLoading: false,
     recordQuality: "high",
-    setting3: true,
+    recognizedFileName: false,
     setting4: false,
   });
   const [showSettings, setShowSettings] = useState(false);
@@ -335,6 +336,22 @@ export default function App() {
     }
   }
 
+  async function fetchRecordName(file) {
+    const data = new FormData();
+    data.append("file", file);
+    try {
+      const response = await fetch(recognizeServer, {
+        method: "POST",
+        body: data,
+      });
+      const fileName = await response.json();
+      return fileName.result;
+    } catch (error) {
+      console.log("upload error", error);
+      return getRecordName(Date.now());
+    }
+  }
+
   async function stopRecordingAndEnablePlayback() {
     setLoading(true);
     try {
@@ -343,6 +360,14 @@ export default function App() {
       const status = await recorder.getStatusAsync();
       const info = await FileSystem.getInfoAsync(recorder.getURI());
       const re = /(?!.*\/).*[^"]/g;
+      const recordName =
+        (await getConnection()) && settings.recognizedFileName
+          ? await fetchRecordName({
+              name: info.uri.match(re)[0],
+              type: "audio/mp4",
+              uri: info.uri,
+            })
+          : getRecordName(Date.now());
       const filename = info.uri.match(re)[0];
       const fileLink = recordsDir + filename;
       await FileSystem.moveAsync({
@@ -351,7 +376,7 @@ export default function App() {
       });
       const newRecord = {
         filename,
-        recordName: getRecordName(Date.now()),
+        recordName,
         duration: getDuration(status.durationMillis),
         uri: fileLink,
         serverStoring: false,
@@ -618,16 +643,14 @@ export default function App() {
       : await MediaLibrary.createAlbumAsync("dictaphone", asset, false);
   }
 
-  const createFormData = (photo, body, type, fieldname) => {
+  const createFormData = (file, body, type, fieldname) => {
     const data = new FormData();
 
     data.append(fieldname, {
-      name: photo.filename,
+      name: file.filename,
       type: type,
       uri:
-        Platform.OS === "android"
-          ? photo.uri
-          : photo.uri.replace("file://", ""),
+        Platform.OS === "android" ? file.uri : file.uri.replace("file://", ""),
     });
 
     Object.keys(body).forEach((key) => {
@@ -637,9 +660,11 @@ export default function App() {
     return data;
   };
   async function sendList(list, type) {
-    if (!getConnection()) {
+    if (!!(await getConnection())) {
       return;
     }
+    const syncType = type === "image" ? "imageList" : "soundList";
+    await syncFiles(list, syncType);
     list.map(async (item) => {
       if (!item.serverStoring && getConnection()) {
         await sendFile(item, type);
@@ -648,6 +673,9 @@ export default function App() {
   }
 
   async function sendFile(file, type) {
+    if (!(await getConnection())) {
+      return;
+    }
     const url =
         type === "image"
           ? "http://dictaphone.worddict.net/api/upload/image/"

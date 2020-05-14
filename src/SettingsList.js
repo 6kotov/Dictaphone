@@ -79,15 +79,18 @@ function SettingsList({ styles, settings, setSettings, setShowSettings }) {
           </View>
         </View>
         <View style={styles.settingsItem}>
-          <Text>Setting #3</Text>
+          <Text>Recognize file name</Text>
           <MaterialCommunityIcons
             name={
-              settings.setting3
+              settings.recognizedFileName
                 ? "checkbox-marked-circle-outline"
                 : "checkbox-blank-circle-outline"
             }
             onPress={() =>
-              setSettings({ ...settings, setting3: !settings.setting3 })
+              setSettings({
+                ...settings,
+                recognizedFileName: !settings.recognizedFileName,
+              })
             }
             size={ICON_SIZE - 15}
             color="black"
