@@ -24,7 +24,7 @@ function SettingsList({ styles, settings, setSettings, setShowSettings }) {
       <Text style={styles.galleryTitle}> Settings </Text>
       <View style={styles.settingsList}>
         <View style={styles.settingsItem}>
-          <Text>Upload new files on server</Text>
+          <Text>Auto upload</Text>
           <MaterialCommunityIcons
             name={
               settings.instatntLoading

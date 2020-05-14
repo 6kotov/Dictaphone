@@ -94,7 +94,9 @@ export default function App() {
       const { status } = await MediaLibrary.requestPermissionsAsync();
       setMediaLibPremission(status === "granted");
     })();
+  }, []);
 
+  useEffect(() => {
     (async () => {
       const { status } = await Permissions.askAsync(
         Permissions.AUDIO_RECORDING,
@@ -102,7 +104,9 @@ export default function App() {
       );
       setRecordPremission(status === "granted");
     })();
+  }, []);
 
+  useEffect(() => {
     (async () => {
       const { status } = await Camera.requestPermissionsAsync();
       setCameraPermission(status === "granted");
@@ -660,7 +664,7 @@ export default function App() {
     return data;
   };
   async function sendList(list, type) {
-    if (!!(await getConnection())) {
+    if (!(await getConnection())) {
       return;
     }
     const syncType = type === "image" ? "imageList" : "soundList";

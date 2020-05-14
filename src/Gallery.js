@@ -56,7 +56,9 @@ function Gallery({
               </Text>
               <View style={styles.galleryCloudAndDelete}>
                 <MaterialCommunityIcons
-                  name={item.serverStoring ? "cloud-check" : "cloud-sync"}
+                  name={
+                    item.serverStoring ? "cloud-check" : "cloud-off-outline"
+                  }
                   size={ICON_SIZE - 5}
                   color="grey"
                   onPress={

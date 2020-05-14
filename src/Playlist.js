@@ -43,7 +43,9 @@ function PlayList({
               <Text>{item.recordName}</Text>
               <View style={styles.playlistItemTimeAndDelete}>
                 <MaterialCommunityIcons
-                  name={item.serverStoring ? "cloud-check" : "cloud-sync"}
+                  name={
+                    item.serverStoring ? "cloud-check" : "cloud-off-outline"
+                  }
                   size={ICON_SIZE - 15}
                   color="grey"
                   onPress={
